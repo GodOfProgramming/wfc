@@ -1,6 +1,7 @@
 pub(crate) mod auto;
 pub(crate) mod cells;
 pub(crate) mod err;
+pub mod ext;
 #[cfg(feature = "profiling")]
 pub mod perf;
 pub mod prebuilt;
@@ -31,7 +32,7 @@ pub mod prelude {
     rules::{Rule, Rules},
     state::{State, StateBuilder},
     util::{IPos, Size, UPos},
-    Observation, TypeAtlas, TypeAtlasExt,
+    Observation, TypeAtlas,
   };
 }
 
@@ -53,23 +54,15 @@ pub trait TypeAtlas<const DIM: usize>
 where
   Self: Debug + Sized,
 {
-  type Variant: Debug + Eq + Hash + Ord + Clone;
-  type Socket: Debug + Eq + Hash + Ord + Clone;
-  type Dimension: Dimension;
+  type Variant: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
+  type Socket: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
+  type Dimension: Dimension + ext::MaybeSerde;
 
   type Arbiter: Arbiter<Self, DIM>;
   type Constraint: Constraint<Self::Socket>;
 
   type Weight: Weight;
   type Shape: Shape<Self, DIM>;
-}
-
-pub trait TypeAtlasExt<const DIM: usize> {
-  const DIM: usize;
-}
-
-impl<T: TypeAtlas<DIM>, const DIM: usize> TypeAtlasExt<DIM> for T {
-  const DIM: usize = DIM;
 }
 
 pub type TResult<Ok, T, const DIM: usize> = Result<Ok, TError<T, DIM>>;
@@ -157,7 +150,7 @@ pub trait Shape<T: TypeAtlas<DIM>, const DIM: usize>: Debug {
 
 #[cfg(test)]
 mod tests {
-  use crate::{prelude::*, TypeAtlasExt};
+  use crate::{ext::TypeAtlasExt, prelude::*};
   use maplit::hashmap;
   use prebuilt::{
     arbiters::WeightArbiter, constraints::UnaryConstrainer, shapes::WeightedShape,
@@ -167,6 +160,8 @@ mod tests {
   const SEED: u64 = 123;
 
   #[derive(Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
+  #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+  #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
   enum Tiles {
     #[default]
     Empty,
@@ -176,6 +171,8 @@ mod tests {
   }
 
   #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
+  #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+  #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
   enum Sockets {
     Any,
   }

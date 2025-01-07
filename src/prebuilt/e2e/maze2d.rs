@@ -106,6 +106,8 @@ where
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub enum Socket {
   Vertical,
   VerticalBreak,

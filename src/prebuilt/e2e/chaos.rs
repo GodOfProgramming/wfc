@@ -1,4 +1,4 @@
-use crate::{auto::FindResult, prelude::*, Constraint, Dimension, TypeAtlas};
+use crate::{auto::FindResult, ext, prelude::*, Constraint, Dimension, TypeAtlas};
 use derive_new::new;
 use prebuilt::{arbiters::WeightArbiter, shapes::InformedShape, weights::DirectWeight};
 use std::{
@@ -17,9 +17,9 @@ impl<V, D, S, const DIM: usize, const INFLUENCE: usize> TypeAtlas<DIM>
   for ChaosMode<V, D, S, DIM, INFLUENCE>
 where
   Self: Constraint<S>,
-  V: Debug + Eq + Hash + Ord + Clone,
-  D: Dimension,
-  S: Debug + Eq + Hash + Ord + Clone,
+  V: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde,
+  D: Dimension + ext::MaybeSerde,
+  S: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde,
 {
   type Variant = V;
   type Dimension = D;

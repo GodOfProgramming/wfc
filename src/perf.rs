@@ -1,7 +1,7 @@
 use std::any::Any;
 use tracing;
+use tracing_subscriber;
 use tracing_subscriber::Registry;
-use tracing_subscriber::{self, layer::SubscriberExt};
 
 #[must_use]
 pub fn enable_profiling() -> Vec<Box<dyn Any>> {
@@ -10,6 +10,7 @@ pub fn enable_profiling() -> Vec<Box<dyn Any>> {
 
   #[cfg(feature = "tracing-tracy")]
   let subscriber = {
+    use tracing_subscriber::layer::SubscriberExt;
     use tracing_tracy::client::Client;
     use tracing_tracy::TracyLayer;
 
@@ -24,6 +25,7 @@ pub fn enable_profiling() -> Vec<Box<dyn Any>> {
     use chrono::prelude::*;
     use std::fs::File;
     use tracing_chrome::ChromeLayerBuilder;
+    use tracing_subscriber::layer::SubscriberExt;
 
     let output_file = format!(
       "target/trace-{variant}.json",
