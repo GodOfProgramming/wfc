@@ -3,6 +3,7 @@ use crate::{
   Dimension, Rules, TResult, TypeAtlas, UPos,
 };
 use derive_more::derive::Deref;
+use itertools::Itertools;
 use ordermap::OrderSet;
 use std::{
   fmt::Debug,
@@ -10,6 +11,8 @@ use std::{
   ops::{Index, IndexMut},
 };
 use strum::{IntoEnumIterator, VariantArray};
+
+pub type VariantSet<V> = OrderSet<V>;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -29,7 +32,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
     input: Vec<Option<T::Variant>>,
     rules: &Rules<T::Variant, T::Dimension, T::Socket>,
   ) -> Self {
-    let all_possibilities = OrderSet::from_iter(rules.keys().cloned());
+    let all_possibilities = VariantSet::from_iter(rules.keys().sorted().cloned());
     let mut entropy_cache = EntropyCache::new(all_possibilities.len());
     let max_entropy = entropy_cache.len();
 
@@ -97,21 +100,19 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
   #[profiling::function]
   pub fn collapse<'v, F>(&mut self, index: usize, collapse_fn: F) -> TResult<(), T, DIM>
   where
-    F: FnOnce(&Self, &OrderSet<T::Variant>) -> TResult<T::Variant, T, DIM>,
+    F: FnOnce(&Self, &VariantSet<T::Variant>) -> TResult<T::Variant, T, DIM>,
   {
     let cell = &self.at(index);
 
-    if let CellState::Unstable(variants) = &cell.state {
-      let variant = collapse_fn(self, variants)?.clone();
-      self.entropy_cache.clear_entry(variants.len(), index);
+    let variant = collapse_fn(self, &cell.variants)?.clone();
+    self.entropy_cache.clear_entry(cell.variants.len(), index);
 
-      let cell = &mut self.list[index];
-      cell.collapse(variant);
-    }
+    let cell = &mut self.list[index];
+    cell.collapse(variant);
 
     Ok(())
   }
-  pub fn lowest_entropy_indexes(&self) -> Option<&OrderSet<usize>> {
+  pub fn lowest_entropy_indexes(&self) -> Option<&VariantSet<usize>> {
     self.entropy_cache.lowest()
   }
 
@@ -144,7 +145,8 @@ pub struct Cell<V, D, const DIM: usize>
 where
   V: Ord + Hash + Eq,
 {
-  state: CellState<V>,
+  variants: VariantSet<V>,
+  entropy: usize,
   neighbors: Vec<(usize, D)>,
 
   pos: IPos<DIM>,
@@ -155,9 +157,11 @@ where
   V: Ord + Hash + Eq,
   D: Dimension,
 {
-  fn new(position: IPos<DIM>, possibilities: impl Into<OrderSet<V>>, size: Size<DIM>) -> Self {
+  fn new(position: IPos<DIM>, variants: impl Into<VariantSet<V>>, size: Size<DIM>) -> Self {
+    let variants = variants.into();
     Self {
-      state: CellState::Unstable(possibilities.into()),
+      entropy: variants.len(),
+      variants,
       neighbors: Self::neighbors_of(position, size),
       pos: position,
     }
@@ -168,40 +172,33 @@ where
     V: Ord,
   {
     Self {
-      state: CellState::Collapsed(collapsed_variant),
+      variants: VariantSet::from([collapsed_variant]),
+      entropy: 0,
       neighbors: Self::neighbors_of(pos, size),
       pos,
     }
   }
 
   pub fn selected_variant(&self) -> Option<&V> {
-    match &self.state {
-      CellState::Collapsed(variant) => Some(variant),
-      CellState::Unstable(_) => None,
-    }
+    self.variants.first()
   }
 
   pub fn collapse(&mut self, variant: V)
   where
     V: Ord,
   {
-    self.state = CellState::Collapsed(variant);
+    self.variants = VariantSet::from([variant]);
   }
 
   pub fn remove_variant(&mut self, variant: &V)
   where
     V: Ord,
   {
-    match &mut self.state {
-      CellState::Collapsed(_) => (),
-      CellState::Unstable(variants) => {
-        variants.swap_remove(variant);
-      }
-    }
+    self.variants.swap_remove(variant);
   }
 
   pub fn collapsed(&self) -> bool {
-    matches!(self.state, CellState::Collapsed(_))
+    self.entropy == 0
   }
 
   pub fn pos(&self) -> &IPos<DIM> {
@@ -212,19 +209,20 @@ where
     &self.neighbors
   }
 
-  pub fn state(&self) -> &CellState<V> {
-    &self.state
+  pub fn variants(&self) -> &VariantSet<V> {
+    &self.variants
   }
 
-  pub fn state_mut(&mut self) -> &mut CellState<V> {
-    &mut self.state
+  pub fn variants_mut(&mut self) -> &mut VariantSet<V> {
+    &mut self.variants
   }
 
-  pub fn entropy(&self) -> Option<usize> {
-    match &self.state {
-      CellState::Collapsed(_) => None,
-      CellState::Unstable(variants) => Some(variants.len()),
-    }
+  pub fn entropy(&self) -> usize {
+    self.entropy
+  }
+
+  pub fn sync_entropy(&mut self) {
+    self.entropy = self.variants.len();
   }
 
   fn neighbors_of(position: IPos<DIM>, size: Size<DIM>) -> Vec<(usize, D)> {
@@ -237,28 +235,17 @@ where
   }
 }
 
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub enum CellState<V>
-where
-  V: Eq + Hash,
-{
-  Collapsed(V),
-  Unstable(OrderSet<V>),
-}
-
 #[derive(Default, Debug, Deref)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct EntropyCache(Vec<OrderSet<usize>>);
+pub struct EntropyCache(Vec<VariantSet<usize>>);
 
 impl EntropyCache {
   fn new(max_entropy: usize) -> Self {
-    Self(vec![OrderSet::new(); max_entropy])
+    Self(vec![VariantSet::new(); max_entropy])
   }
 
   #[profiling::function]
-  pub fn lowest(&self) -> Option<&OrderSet<usize>> {
+  pub fn lowest(&self) -> Option<&VariantSet<usize>> {
     self.iter().find(|level| !level.is_empty())
   }
 
@@ -273,7 +260,7 @@ impl EntropyCache {
 }
 
 impl Index<usize> for EntropyCache {
-  type Output = OrderSet<usize>;
+  type Output = VariantSet<usize>;
 
   fn index(&self, index: usize) -> &Self::Output {
     &self.0[index - 1]

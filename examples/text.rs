@@ -11,10 +11,8 @@ use std::{collections::HashMap, error::Error, fmt::Debug};
 use wfc::{prelude::*, Adjuster};
 
 const STEP_BY_STEP: bool = false;
-
 const ROWS: usize = 16;
 const COLS: usize = 32;
-
 const INFLUENCE_RADIUS: f64 = 2.0;
 
 #[derive(Debug)]
@@ -48,6 +46,11 @@ impl TypeAtlas<2> for TextMaze {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+  run()?;
+  run()
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
   #[cfg(feature = "profiling")]
   let _guards = wfc::perf::enable_profiling();
 
@@ -172,16 +175,4 @@ fn print_state(state: State<TextMaze, 2>) {
   );
 
   println!("\n{output}\n");
-
-  let mut rows = (0..ROWS)
-    .map(|i| {
-      let slice = &data[i * COLS..i * COLS + COLS];
-      itertools::join(slice, "")
-    })
-    .collect::<Vec<_>>();
-
-  rows.reverse();
-
-  let output = itertools::join(rows, "\n");
-  println!("{output}");
 }

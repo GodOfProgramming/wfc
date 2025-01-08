@@ -9,8 +9,6 @@ use std::{collections::HashMap, iter::Iterator, marker::PhantomData};
 
 #[derive(Debug)]
 pub struct DeterministicArbiter<T: TypeAtlas<DIM>, const DIM: usize> {
-  seed: u64,
-  rng: ChaCha20Rng,
   _pd: PhantomData<T>,
 }
 
@@ -19,14 +17,7 @@ where
   T::Shape: Default,
 {
   fn default() -> Self {
-    let seed = thread_rng().gen();
-    let rng = ChaCha20Rng::seed_from_u64(seed);
-
-    Self {
-      seed,
-      rng,
-      _pd: PhantomData,
-    }
+    Self { _pd: PhantomData }
   }
 }
 
@@ -35,32 +26,13 @@ where
   T::Shape: Clone,
 {
   fn clone(&self) -> Self {
-    Self {
-      seed: self.seed,
-      rng: self.rng.clone(),
-      _pd: PhantomData,
-    }
+    Self { _pd: PhantomData }
   }
 }
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> DeterministicArbiter<T, DIM> {
-  pub fn new(seed: Option<u64>) -> Self {
-    let (rng, seed) = seed
-      .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
-      .unwrap_or_else(|| {
-        let seed = thread_rng().gen();
-        (ChaCha20Rng::seed_from_u64(seed), seed)
-      });
-
-    Self {
-      seed,
-      rng,
-      _pd: PhantomData,
-    }
-  }
-
-  pub fn seed(&self) -> u64 {
-    self.seed
+  pub fn new() -> Self {
+    Self { _pd: PhantomData }
   }
 }
 
@@ -71,7 +43,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for DeterministicArbit
       return Ok(None);
     };
 
-    let Some(index) = indexes.iter().next().cloned() else {
+    let Some(index) = indexes.iter().last().cloned() else {
       // should be unreachable
       return Ok(None);
     };
@@ -79,7 +51,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for DeterministicArbit
     cells.collapse(index, |_cells, variants| {
       variants
         .iter()
-        .next()
+        .last()
         .cloned()
         .ok_or(Error::NoPossibilities)
     })?;
@@ -335,9 +307,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for LimitAdjuster<T, 
     {
       let starting_entropy = cell.entropy();
       cell.remove_variant(variant);
-      if let Some((starting_entropy, new_entropy)) = starting_entropy.zip(cell.entropy()) {
-        cells.entropy_cache.set(starting_entropy, i, new_entropy);
-      }
+      cells.entropy_cache.set(starting_entropy, i, cell.entropy());
     }
   }
 
@@ -349,6 +319,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for LimitAdjuster<T, 
   }
 }
 
+#[derive(Debug)]
 pub struct MultiPhaseArbitration<A, Adj, T: TypeAtlas<DIM>, const DIM: usize>
 where
   A: Arbiter<T, DIM>,

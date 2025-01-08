@@ -1,10 +1,9 @@
 use crate::{
-  cells::{Cell, CellState, Cells},
+  cells::{Cell, Cells, VariantSet},
   util::{self, Size, UPos},
   Adjuster, Arbiter, Constraint, Dimension, Error, Observation, Rules, TResult, TypeAtlas,
 };
 use derive_more::derive::{Deref, DerefMut};
-use ordermap::OrderSet;
 use std::{
   collections::{HashMap, HashSet},
   fmt::Debug,
@@ -135,7 +134,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
         let cell = this.cells.at_mut(index);
         let neighbor = *cell.pos() + dir;
         let neighbor_index = neighbor.index_in(external_cells.size);
-        let external_variant = OrderSet::from_iter([ext[neighbor_index].clone()]);
+        let external_variant = VariantSet::from_iter([ext[neighbor_index].clone()]);
 
         let starting_entropy = cell.entropy();
         Self::constrain(
@@ -148,10 +147,8 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
         )?;
         let new_entropy = cell.entropy();
 
-        if let Some((starting_entropy, new_entropy)) = starting_entropy.zip(new_entropy) {
-          if starting_entropy != new_entropy {
-            this.cells.set_entropy(starting_entropy, index, new_entropy);
-          }
+        if starting_entropy != new_entropy {
+          this.cells.set_entropy(starting_entropy, index, new_entropy);
         }
 
         this.propagate(index)?;
@@ -208,27 +205,23 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
         let [cell, neighbor] =
           unsafe { util::index_twice_mut(&mut self.cells.list, cell_index, neighbor_index) };
 
-        if let CellState::Unstable(variants) = cell.state() {
-          let starting_entropy = neighbor.entropy();
-          Self::constrain(
-            neighbor,
-            &self.constraint,
-            variants,
-            &direction,
-            &mut self.rules,
-            &mut self.socket_cache,
-          )?;
-          let new_entropy = neighbor.entropy();
+        let starting_entropy = neighbor.entropy();
+        Self::constrain(
+          neighbor,
+          &self.constraint,
+          cell.variants(),
+          &direction,
+          &mut self.rules,
+          &mut self.socket_cache,
+        )?;
+        let new_entropy = neighbor.entropy();
 
-          // if reduced, then push this neighbor onto the stack to propagate its changes to its neighbors
-          if let Some((starting_entropy, new_entropy)) = starting_entropy.zip(new_entropy) {
-            if starting_entropy != new_entropy {
-              self
-                .cells
-                .set_entropy(starting_entropy, neighbor_index, new_entropy);
-              stack.push(neighbor_index);
-            }
-          }
+        // if reduced, then push this neighbor onto the stack to propagate its changes to its neighbors
+        if starting_entropy != new_entropy {
+          self
+            .cells
+            .set_entropy(starting_entropy, neighbor_index, new_entropy);
+          stack.push(neighbor_index);
         }
       }
     }
@@ -298,45 +291,45 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
   fn constrain(
     cell: &mut Cell<T::Variant, T::Dimension, DIM>,
     constraint: &T::Constraint,
-    neighbor_possibilities: &OrderSet<T::Variant>,
+    neighbor_possibilities: &VariantSet<T::Variant>,
     neighbor_to_self_dir: &T::Dimension,
     rules: &Rules<T::Variant, T::Dimension, T::Socket>,
     cache: &mut SocketCache<T, DIM>,
   ) -> TResult<(), T, DIM> {
-    if let CellState::Unstable(variants) = cell.state_mut() {
-      let neighbor_sockets: &HashSet<T::Socket> = {
-        profiling::function_scope!("Neighbor Sockets");
+    let neighbor_sockets: &HashSet<T::Socket> = {
+      profiling::function_scope!("Neighbor Sockets");
 
-        match cache.lookup(neighbor_possibilities, neighbor_to_self_dir) {
-          Some(Some(sockets)) => sockets,
-          Some(None) => cache.partial_create(rules, neighbor_possibilities, neighbor_to_self_dir),
-          None => cache.full_create(rules, neighbor_possibilities, neighbor_to_self_dir),
-        }
+      match cache.lookup(neighbor_possibilities, neighbor_to_self_dir) {
+        Some(Some(sockets)) => sockets,
+        Some(None) => cache.partial_create(rules, neighbor_possibilities, neighbor_to_self_dir),
+        None => cache.full_create(rules, neighbor_possibilities, neighbor_to_self_dir),
+      }
+    };
+
+    let opposite = neighbor_to_self_dir.opposite();
+
+    cell.variants_mut().retain(|variant| {
+      let Some(self_rule) = rules.get(variant) else {
+        return false;
       };
 
-      let opposite = neighbor_to_self_dir.opposite();
+      self_rule
+        .get(&opposite)
+        .map(|socket| constraint.check(socket, neighbor_sockets))
+        .unwrap_or(false) // no rule means no connection
+    });
 
-      variants.retain(|variant| {
-        let Some(self_rule) = rules.get(variant) else {
-          return false;
-        };
-
-        self_rule
-          .get(&opposite)
-          .map(|socket| constraint.check(socket, neighbor_sockets))
-          .unwrap_or(false) // no rule means no connection
+    if cell.variants().is_empty() {
+      return Err(Error::Contradiction {
+        position: *cell.pos(),
+        neighbor: *cell.pos() + neighbor_to_self_dir.opposite(),
+        direction: neighbor_to_self_dir.opposite(),
+        neighbor_variants: Vec::from_iter(neighbor_possibilities.iter().cloned()),
+        neighbor_sockets: neighbor_sockets.iter().cloned().collect(),
       });
-
-      if variants.is_empty() {
-        return Err(Error::Contradiction {
-          position: *cell.pos(),
-          neighbor: *cell.pos() + neighbor_to_self_dir.opposite(),
-          direction: neighbor_to_self_dir.opposite(),
-          neighbor_variants: Vec::from_iter(neighbor_possibilities.iter().cloned()),
-          neighbor_sockets: neighbor_sockets.iter().cloned().collect(),
-        });
-      }
     }
+
+    cell.sync_entropy();
 
     Ok(())
   }
@@ -346,7 +339,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 struct SocketCache<T: TypeAtlas<DIM>, const DIM: usize>(
-  HashMap<OrderSet<T::Variant>, HashMap<T::Dimension, HashSet<T::Socket>>>,
+  HashMap<VariantSet<T::Variant>, HashMap<T::Dimension, HashSet<T::Socket>>>,
 );
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> Default for SocketCache<T, DIM> {
@@ -358,7 +351,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Default for SocketCache<T, DIM> {
 impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
   fn lookup(
     &mut self,
-    variants: &OrderSet<T::Variant>,
+    variants: &VariantSet<T::Variant>,
     dir: &T::Dimension,
   ) -> Option<Option<&HashSet<T::Socket>>> {
     self.get(variants).map(|dirmap| dirmap.get(&dir))
@@ -367,7 +360,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
   fn full_create(
     &mut self,
     rules: &Rules<T::Variant, T::Dimension, T::Socket>,
-    variants: &OrderSet<T::Variant>,
+    variants: &VariantSet<T::Variant>,
     dir: &T::Dimension,
   ) -> &HashSet<T::Socket> {
     let dir_map = self.entry(variants.clone()).or_default();
@@ -384,7 +377,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
   fn partial_create(
     &mut self,
     rules: &Rules<T::Variant, T::Dimension, T::Socket>,
-    variants: &OrderSet<T::Variant>,
+    variants: &VariantSet<T::Variant>,
     dir: &T::Dimension,
   ) -> &HashSet<T::Socket> {
     let dir_map = self.get_mut(variants).unwrap();

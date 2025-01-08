@@ -162,10 +162,7 @@ mod tests {
   use crate::{ext::TypeAtlasExt, prelude::*};
   use maplit::hashmap;
   use prebuilt::{
-    arbiters::{DeterministicArbiter, RandomArbiter, WeightArbiter},
-    constraints::UnaryConstrainer,
-    shapes::WeightedShape,
-    Dim2d,
+    arbiters::WeightArbiter, constraints::UnaryConstrainer, shapes::WeightedShape, Dim2d,
   };
 
   const SEED: u64 = 123;
@@ -195,7 +192,7 @@ mod tests {
     type Dimension = Dim2d;
     type Variant = Tiles;
     type Socket = Option<Sockets>;
-    type Arbiter = DeterministicArbiter<Self, 2>;
+    type Arbiter = WeightArbiter<Self, 2>;
     type Constraint = UnaryConstrainer;
     type Weight = u8;
     type Shape = WeightedShape<Self, 2>;
@@ -231,7 +228,7 @@ mod tests {
 
     let mut a_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
       [5, 5],
-      DeterministicArbiter::new(Some(SEED)),
+      WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
       UnaryConstrainer,
     );
 
@@ -241,7 +238,7 @@ mod tests {
 
     let mut b_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
       [5, 5],
-      DeterministicArbiter::new(Some(SEED)),
+      WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
       UnaryConstrainer,
     );
 
