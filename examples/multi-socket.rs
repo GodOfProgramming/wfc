@@ -1,7 +1,5 @@
 use maplit::hashmap;
-use prebuilt::{
-  arbiters::WeightArbiter, constraints::SetConstrainer, shapes::NoShape, weights::DirectWeight,
-};
+use prebuilt::{arbiters::WeightArbiter, constraints::SetConstrainer, shapes::NoShape};
 use std::collections::BTreeSet;
 use wfc::{prebuilt::Dim3d, prelude::*, Rule, StateBuilder};
 
@@ -14,7 +12,7 @@ impl TypeAtlas<3> for Bench {
   type Socket = BTreeSet<usize>;
   type Arbiter = WeightArbiter<Self, 3>;
   type Constraint = SetConstrainer;
-  type Weight = DirectWeight;
+  type Weight = u8;
   type Shape = NoShape;
 }
 

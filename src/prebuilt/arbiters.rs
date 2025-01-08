@@ -79,9 +79,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for RandomArbiter<T, D
     cells.collapse(index, |_cells, variants| {
       variants
         .iter()
-        .collect::<Vec<_>>()
         .choose(&mut self.rng)
-        .cloned()
         .cloned()
         .ok_or(Error::NoPossibilities)
     })?;

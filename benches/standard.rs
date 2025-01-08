@@ -10,15 +10,13 @@ mod text {
   use crate::SEED;
   use criterion::Criterion;
   use maplit::hashmap;
-  use std::collections::HashMap;
   use wfc::{
     prebuilt::{
-      arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
+      arbiters::{LimitAdjuster, MultiPhaseArbitration, RandomArbiter},
       auto::GenericFinder,
       constraints::{DefaultConstrainer, UnaryConstrainer},
       e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
       shapes::WeightedShape,
-      weights::DirectWeight,
       Dim2d,
     },
     Adjuster, RuleFinder, Rules, Size, StateBuilder, TypeAtlas,
@@ -49,8 +47,8 @@ mod text {
     type Variant = char;
     type Socket = Option<Socket>;
     type Constraint = DefaultConstrainer;
-    type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = DirectWeight;
+    type Arbiter = MultiPhaseArbitration<RandomArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
+    type Weight = u8;
     type Shape = WeightedShape<Self, 2>;
   }
 
@@ -88,12 +86,10 @@ mod text {
     for pow in 4_u32..8_u32 {
       let dims = 2_u32.pow(pow);
 
-      let arbiter = WeightArbiter::new(Some(SEED), WeightedShape::new(HashMap::default())).chain(
-        LimitAdjuster::new(hashmap! {
-          TextMazeBench::ENTRANCE => 0,
-          TextMazeBench::EXIT => 0,
-        }),
-      );
+      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(hashmap! {
+        TextMazeBench::ENTRANCE => 0,
+        TextMazeBench::EXIT => 0,
+      }));
 
       let size = Size::new([dims as usize, dims as usize]);
 
@@ -121,9 +117,7 @@ mod misc {
   use crate::SEED;
   use criterion::Criterion;
   use maplit::hashmap;
-  use prebuilt::{
-    arbiters::RandomArbiter, constraints::SetConstrainer, shapes::NoShape, weights::DirectWeight,
-  };
+  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstrainer, shapes::NoShape};
   use std::collections::BTreeSet;
   use wfc::{prebuilt::Dim3d, prelude::*, Rule, Size, StateBuilder};
 
@@ -136,7 +130,7 @@ mod misc {
     type Socket = BTreeSet<usize>;
     type Arbiter = RandomArbiter<Self, 3>;
     type Constraint = SetConstrainer;
-    type Weight = DirectWeight;
+    type Weight = u8;
     type Shape = NoShape;
   }
 

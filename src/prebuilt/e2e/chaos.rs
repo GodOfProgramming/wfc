@@ -1,6 +1,6 @@
 use crate::{auto::FindResult, ext, prelude::*, Constraint, Dimension, TypeAtlas};
 use derive_new::new;
-use prebuilt::{arbiters::WeightArbiter, shapes::InformedShape, weights::DirectWeight};
+use prebuilt::{arbiters::WeightArbiter, shapes::InformedShape};
 use std::{
   collections::{BTreeSet, HashSet},
   fmt::Debug,
@@ -26,7 +26,7 @@ where
   type Socket = S;
   type Constraint = Self;
   type Arbiter = WeightArbiter<Self, DIM>;
-  type Weight = DirectWeight;
+  type Weight = u32;
   type Shape = InformedShape<Self, DIM>;
 }
 

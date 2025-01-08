@@ -125,27 +125,36 @@ pub trait Constraint<S>: Debug {
   fn check(&self, variant_socket: &S, sockets: &HashSet<S>) -> bool;
 }
 
-pub trait Weight: Debug + Default + Clone {
-  type ValueType: SampleUniform
-    + for<'a> AddAssign<&'a Self::ValueType>
-    + PartialOrd<Self::ValueType>
+pub trait Weight:
+  SampleUniform
+  + Default
+  + Clone
+  + Copy
+  + PartialOrd<Self>
+  + for<'a> AddAssign<&'a Self>
+  + Add<Self, Output = Self>
+  + Mul<Self, Output = Self>
+  + Sum<Self>
+  + Debug
+{
+}
+
+impl<T> Weight for T where
+  T: SampleUniform
+    + Default
     + Clone
     + Copy
-    + Default
-    + Add<Self::ValueType, Output = Self::ValueType>
-    + Mul<Self::ValueType, Output = Self::ValueType>
-    + Sum<Self::ValueType>
-    + Debug;
-  fn value(&self) -> Self::ValueType;
+    + PartialOrd<Self>
+    + for<'a> AddAssign<&'a Self>
+    + Add<Self, Output = Self>
+    + Mul<Self, Output = Self>
+    + Sum<Self>
+    + Debug
+{
 }
 
 pub trait Shape<T: TypeAtlas<DIM>, const DIM: usize>: Debug {
-  fn weight(
-    &self,
-    variant: &T::Variant,
-    index: usize,
-    cells: &Cells<T, DIM>,
-  ) -> <T::Weight as Weight>::ValueType;
+  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> T::Weight;
 }
 
 #[cfg(test)]
@@ -153,8 +162,7 @@ mod tests {
   use crate::{ext::TypeAtlasExt, prelude::*};
   use maplit::hashmap;
   use prebuilt::{
-    arbiters::WeightArbiter, constraints::UnaryConstrainer, shapes::WeightedShape,
-    weights::DirectWeight, Dim2d,
+    arbiters::WeightArbiter, constraints::UnaryConstrainer, shapes::WeightedShape, Dim2d,
   };
 
   const SEED: u64 = 123;
@@ -186,7 +194,7 @@ mod tests {
     type Socket = Option<Sockets>;
     type Arbiter = WeightArbiter<Self, 2>;
     type Constraint = UnaryConstrainer;
-    type Weight = DirectWeight;
+    type Weight = u8;
     type Shape = WeightedShape<Self, 2>;
   }
 
@@ -214,8 +222,8 @@ mod tests {
     };
 
     let weights = hashmap! {
-      Tiles::TileA => DirectWeight(3),
-      Tiles::TileB => DirectWeight(2),
+      Tiles::TileA => 3,
+      Tiles::TileB => 2,
     };
 
     let mut a_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(

@@ -153,7 +153,6 @@ mod tests {
       auto::GenericFinder,
       constraints::{DefaultConstrainer, UnaryConstrainer},
       shapes::{InformedShape, MultiShape, WeightedShape},
-      weights::DirectWeight,
       Dim2d,
     },
     Adjuster, RuleFinder, StateBuilder, TypeAtlas,
@@ -227,7 +226,7 @@ mod tests {
     type Socket = Option<Socket>;
     type Constraint = DefaultConstrainer;
     type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = DirectWeight;
+    type Weight = u32;
     type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
   }
 
@@ -254,10 +253,7 @@ mod tests {
 
     let rules = finder.find().unwrap();
 
-    let weights = rules
-      .keys()
-      .map(|k| (k.clone(), DirectWeight::default()))
-      .collect();
+    let weights = rules.keys().map(|k| (k.clone(), 1)).collect();
 
     let shape = MultiShape::new(
       WeightedShape::new(weights),

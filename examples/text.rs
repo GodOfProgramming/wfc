@@ -5,7 +5,6 @@ use prebuilt::{
   constraints::{DefaultConstrainer, UnaryConstrainer},
   e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
   shapes::{InformedShape, MultiShape, WeightedShape},
-  weights::DirectWeight,
   Dim2d,
 };
 use std::{
@@ -48,7 +47,7 @@ impl TypeAtlas<2> for TextMaze {
   type Socket = Option<Socket>;
   type Constraint = DefaultConstrainer;
   type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-  type Weight = DirectWeight;
+  type Weight = u8;
   type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
 }
 
@@ -86,10 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let seed: Option<u64> = args.get(1).map(|arg| arg.parse()).transpose().unwrap();
 
-  let weights = rules
-    .keys()
-    .map(|k| (k.clone(), DirectWeight::default()))
-    .collect();
+  let weights = rules.keys().map(|k| (k.clone(), 1)).collect();
 
   let shape = MultiShape::new(
     WeightedShape::new(weights),

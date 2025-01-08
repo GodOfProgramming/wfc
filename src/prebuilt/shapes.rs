@@ -1,6 +1,6 @@
 use crate::{
   cells::{Cell, Cells},
-  IPos, Shape, TypeAtlas, Weight,
+  IPos, Shape, TypeAtlas,
 };
 use derive_more::derive::{Deref, DerefMut};
 use derive_new::new;
@@ -10,13 +10,8 @@ use std::{collections::HashMap, marker::PhantomData, ops::Range};
 pub struct NoShape;
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for NoShape {
-  fn weight(
-    &self,
-    _variant: &T::Variant,
-    _index: usize,
-    _cells: &Cells<T, DIM>,
-  ) -> <T::Weight as Weight>::ValueType {
-    T::Weight::default().value()
+  fn weight(&self, _variant: &T::Variant, _index: usize, _cells: &Cells<T, DIM>) -> T::Weight {
+    T::Weight::default()
   }
 }
 
@@ -36,23 +31,18 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for WeightedShape<T, DIM> {
 }
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for WeightedShape<T, DIM> {
-  fn weight(
-    &self,
-    variant: &T::Variant,
-    _index: usize,
-    _cells: &Cells<T, DIM>,
-  ) -> <T::Weight as Weight>::ValueType {
+  fn weight(&self, variant: &T::Variant, _index: usize, _cells: &Cells<T, DIM>) -> T::Weight {
     self
       .get(variant)
-      .map(|w| w.value())
-      .unwrap_or_else(|| T::Weight::default().value())
+      .cloned()
+      .unwrap_or_else(|| T::Weight::default())
   }
 }
 
 #[derive(Debug)]
 pub struct InformedShape<T: TypeAtlas<DIM>, const DIM: usize> {
   range: f64,
-  magnitude: <T::Weight as Weight>::ValueType,
+  magnitude: T::Weight,
   values: HashMap<T::Variant, T::Weight>,
 
   estimated_neighbors: usize,
@@ -73,11 +63,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for InformedShape<T, DIM> {
 }
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> InformedShape<T, DIM> {
-  pub fn new(
-    range: f64,
-    magnitude: <T::Weight as Weight>::ValueType,
-    values: HashMap<T::Variant, T::Weight>,
-  ) -> Self {
+  pub fn new(range: f64, magnitude: T::Weight, values: HashMap<T::Variant, T::Weight>) -> Self {
     Self {
       range,
       magnitude,
@@ -149,17 +135,12 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> InformedShape<T, DIM> {
 }
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for InformedShape<T, DIM> {
-  fn weight(
-    &self,
-    variant: &T::Variant,
-    index: usize,
-    cells: &Cells<T, DIM>,
-  ) -> <T::Weight as Weight>::ValueType {
+  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> T::Weight {
     let neighbors = self.collapsed_neighbors(cells.at(index), cells);
     neighbors
       .iter()
       .filter(|(v, _)| variant == *v)
-      .filter_map(|(v, _d)| self.values.get(v).map(|w| w.value() * self.magnitude))
+      .filter_map(|(v, _d)| self.values.get(v).map(|w| *w * self.magnitude))
       .sum()
   }
 }
@@ -197,12 +178,7 @@ where
   S2: Shape<T, DIM>,
   T: TypeAtlas<DIM>,
 {
-  fn weight(
-    &self,
-    variant: &T::Variant,
-    index: usize,
-    cells: &Cells<T, DIM>,
-  ) -> <T::Weight as Weight>::ValueType {
+  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> T::Weight {
     self.shape1.weight(variant, index, cells) + self.shape2.weight(variant, index, cells)
   }
 }
