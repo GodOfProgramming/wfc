@@ -226,7 +226,7 @@ mod tests {
     type Socket = Option<Socket>;
     type Constraint = DefaultConstrainer;
     type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = u32;
+    type Weight = usize;
     type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
   }
 
