@@ -277,7 +277,7 @@ mod tests {
 
     crate::collapse(&mut state).unwrap();
 
-    let actual: Vec<_> = state.into();
+    let actual: Vec<_> = state.data();
 
     let expected = Vec::from_iter(EXPECTED_OUTPUT.chars());
     assert_eq!(expected.len(), actual.len());

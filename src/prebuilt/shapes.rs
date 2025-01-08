@@ -80,7 +80,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> InformedShape<T, DIM> {
     cell: &'v Cell<T::Variant, T::Dimension, DIM>,
     cells: &'v Cells<T, DIM>,
   ) -> Vec<(&'v T::Variant, f64)> {
-    let start = cell.position;
+    let start = cell.pos();
 
     let mut neighbors = Vec::with_capacity(self.estimated_neighbors);
 

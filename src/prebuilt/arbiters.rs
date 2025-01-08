@@ -8,6 +8,100 @@ use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, iter::Iterator, marker::PhantomData};
 
 #[derive(Debug)]
+pub struct DeterministicArbiter<T: TypeAtlas<DIM>, const DIM: usize> {
+  seed: u64,
+  rng: ChaCha20Rng,
+  _pd: PhantomData<T>,
+}
+
+impl<T: TypeAtlas<DIM>, const DIM: usize> Default for DeterministicArbiter<T, DIM>
+where
+  T::Shape: Default,
+{
+  fn default() -> Self {
+    let seed = thread_rng().gen();
+    let rng = ChaCha20Rng::seed_from_u64(seed);
+
+    Self {
+      seed,
+      rng,
+      _pd: PhantomData,
+    }
+  }
+}
+
+impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for DeterministicArbiter<T, DIM>
+where
+  T::Shape: Clone,
+{
+  fn clone(&self) -> Self {
+    Self {
+      seed: self.seed,
+      rng: self.rng.clone(),
+      _pd: PhantomData,
+    }
+  }
+}
+
+impl<T: TypeAtlas<DIM>, const DIM: usize> DeterministicArbiter<T, DIM> {
+  pub fn new(seed: Option<u64>) -> Self {
+    let (rng, seed) = seed
+      .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
+      .unwrap_or_else(|| {
+        let seed = thread_rng().gen();
+        (ChaCha20Rng::seed_from_u64(seed), seed)
+      });
+
+    Self {
+      seed,
+      rng,
+      _pd: PhantomData,
+    }
+  }
+
+  pub fn seed(&self) -> u64 {
+    self.seed
+  }
+}
+
+impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for DeterministicArbiter<T, DIM> {
+  #[profiling::function]
+  fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM> {
+    let Some(indexes) = cells.lowest_entropy_indexes() else {
+      return Ok(None);
+    };
+
+    let Some(index) = indexes.iter().next().cloned() else {
+      // should be unreachable
+      return Ok(None);
+    };
+
+    cells.collapse(index, |_cells, variants| {
+      variants
+        .iter()
+        .next()
+        .cloned()
+        .ok_or(Error::NoPossibilities)
+    })?;
+
+    Ok(Some(index))
+  }
+}
+
+impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for DeterministicArbiter<T, DIM> {
+  type Chained<C: Adjuster<T, DIM>> = MultiPhaseArbitration<Self, C, T, DIM>;
+
+  fn revise(&mut self, _variant: &T::Variant, _cells: &mut Cells<T, DIM>) {}
+
+  fn chain<C>(self, other: C) -> Self::Chained<C>
+  where
+    C: Adjuster<T, DIM>,
+  {
+    MultiPhaseArbitration::new(self, other)
+  }
+}
+
+#[derive(Debug)]
 pub struct RandomArbiter<T: TypeAtlas<DIM>, const DIM: usize> {
   seed: u64,
   rng: ChaCha20Rng,
@@ -239,9 +333,11 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for LimitAdjuster<T, 
       .enumerate()
       .filter(|(_, cell)| !cell.collapsed())
     {
-      let starting_entropy = cell.entropy;
+      let starting_entropy = cell.entropy();
       cell.remove_variant(variant);
-      cells.entropy_cache.set(starting_entropy, i, cell.entropy);
+      if let Some((starting_entropy, new_entropy)) = starting_entropy.zip(cell.entropy()) {
+        cells.entropy_cache.set(starting_entropy, i, new_entropy);
+      }
     }
   }
 

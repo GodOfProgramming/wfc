@@ -5,8 +5,8 @@ use crate::{
 use derive_more::derive::Deref;
 use ordermap::OrderSet;
 use std::{
-  collections::BTreeSet,
   fmt::Debug,
+  hash::Hash,
   ops::{Index, IndexMut},
 };
 use strum::{IntoEnumIterator, VariantArray};
@@ -29,7 +29,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
     input: Vec<Option<T::Variant>>,
     rules: &Rules<T::Variant, T::Dimension, T::Socket>,
   ) -> Self {
-    let all_possibilities = BTreeSet::from_iter(rules.keys().cloned());
+    let all_possibilities = OrderSet::from_iter(rules.keys().cloned());
     let mut entropy_cache = EntropyCache::new(all_possibilities.len());
     let max_entropy = entropy_cache.len();
 
@@ -97,16 +97,17 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
   #[profiling::function]
   pub fn collapse<'v, F>(&mut self, index: usize, collapse_fn: F) -> TResult<(), T, DIM>
   where
-    F: FnOnce(&Self, &BTreeSet<T::Variant>) -> TResult<T::Variant, T, DIM>,
+    F: FnOnce(&Self, &OrderSet<T::Variant>) -> TResult<T::Variant, T, DIM>,
   {
     let cell = &self.at(index);
 
-    let variant = collapse_fn(self, &cell.possibilities)?.clone();
+    if let CellState::Unstable(variants) = &cell.state {
+      let variant = collapse_fn(self, variants)?.clone();
+      self.entropy_cache.clear_entry(variants.len(), index);
 
-    let cell = &mut self.list[index];
-
-    self.entropy_cache.clear_entry(cell.entropy, index);
-    cell.collapse(variant);
+      let cell = &mut self.list[index];
+      cell.collapse(variant);
+    }
 
     Ok(())
   }
@@ -141,70 +142,92 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct Cell<V, D, const DIM: usize>
 where
-  V: Ord,
+  V: Ord + Hash + Eq,
 {
-  pub possibilities: BTreeSet<V>,
-  pub neighbors: Vec<(usize, D)>,
-  pub entropy: usize,
+  state: CellState<V>,
+  neighbors: Vec<(usize, D)>,
 
-  pub position: IPos<DIM>,
+  pos: IPos<DIM>,
 }
 
 impl<V, D, const DIM: usize> Cell<V, D, DIM>
 where
-  V: Ord,
+  V: Ord + Hash + Eq,
   D: Dimension,
 {
-  fn new(position: IPos<DIM>, possibilities: impl Into<BTreeSet<V>>, size: Size<DIM>) -> Self {
-    let possibilities = possibilities.into();
-    let entropy = possibilities.len();
+  fn new(position: IPos<DIM>, possibilities: impl Into<OrderSet<V>>, size: Size<DIM>) -> Self {
     Self {
-      possibilities,
-      entropy,
-      neighbors: Self::neighbors(position, size),
-      position,
+      state: CellState::Unstable(possibilities.into()),
+      neighbors: Self::neighbors_of(position, size),
+      pos: position,
     }
   }
 
-  pub fn new_collapsed(position: IPos<DIM>, collapsed_variant: V, size: Size<DIM>) -> Self
+  pub fn new_collapsed(pos: IPos<DIM>, collapsed_variant: V, size: Size<DIM>) -> Self
   where
     V: Ord,
   {
     Self {
-      possibilities: BTreeSet::from_iter([collapsed_variant]),
-      entropy: 0,
-      neighbors: Self::neighbors(position, size),
-      position,
+      state: CellState::Collapsed(collapsed_variant),
+      neighbors: Self::neighbors_of(pos, size),
+      pos,
     }
   }
 
   pub fn selected_variant(&self) -> Option<&V> {
-    self
-      .collapsed()
-      .then(|| self.possibilities.iter().next().unwrap())
+    match &self.state {
+      CellState::Collapsed(variant) => Some(variant),
+      CellState::Unstable(_) => None,
+    }
   }
 
   pub fn collapse(&mut self, variant: V)
   where
     V: Ord,
   {
-    self.possibilities = BTreeSet::from([variant]);
-    self.entropy = 0;
+    self.state = CellState::Collapsed(variant);
   }
 
   pub fn remove_variant(&mut self, variant: &V)
   where
     V: Ord,
   {
-    self.possibilities.remove(variant);
-    self.entropy = self.possibilities.len();
+    match &mut self.state {
+      CellState::Collapsed(_) => (),
+      CellState::Unstable(variants) => {
+        variants.swap_remove(variant);
+      }
+    }
   }
 
   pub fn collapsed(&self) -> bool {
-    self.entropy == 0
+    matches!(self.state, CellState::Collapsed(_))
   }
 
-  fn neighbors(position: IPos<DIM>, size: Size<DIM>) -> Vec<(usize, D)> {
+  pub fn pos(&self) -> &IPos<DIM> {
+    &self.pos
+  }
+
+  pub fn neighbors(&self) -> &Vec<(usize, D)> {
+    &self.neighbors
+  }
+
+  pub fn state(&self) -> &CellState<V> {
+    &self.state
+  }
+
+  pub fn state_mut(&mut self) -> &mut CellState<V> {
+    &mut self.state
+  }
+
+  pub fn entropy(&self) -> Option<usize> {
+    match &self.state {
+      CellState::Collapsed(_) => None,
+      CellState::Unstable(variants) => Some(variants.len()),
+    }
+  }
+
+  fn neighbors_of(position: IPos<DIM>, size: Size<DIM>) -> Vec<(usize, D)> {
     D::iter()
       .filter_map(|dir| {
         let npos = position + dir;
@@ -212,6 +235,17 @@ where
       })
       .collect()
   }
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub enum CellState<V>
+where
+  V: Eq + Hash,
+{
+  Collapsed(V),
+  Unstable(OrderSet<V>),
 }
 
 #[derive(Default, Debug, Deref)]

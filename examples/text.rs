@@ -7,11 +7,7 @@ use prebuilt::{
   shapes::{InformedShape, MultiShape, WeightedShape},
   Dim2d,
 };
-use std::{
-  collections::HashMap,
-  error::Error,
-  fmt::{Debug, Display},
-};
+use std::{collections::HashMap, error::Error, fmt::Debug};
 use wfc::{prelude::*, Adjuster};
 
 const STEP_BY_STEP: bool = false;
@@ -124,10 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn all_at_once<T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<T, DIM>)
-where
-  T::Variant: Display,
-{
+fn all_at_once(mut state: State<TextMaze, 2>) {
   if let Err(e) = wfc::collapse(&mut state) {
     eprintln!("{e}");
     return;
@@ -136,10 +129,7 @@ where
   print_state(state);
 }
 
-fn step_by_step<T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<T, DIM>)
-where
-  T::Variant: Default + Display,
-{
+fn step_by_step(mut state: State<TextMaze, 2>) {
   'c: loop {
     match state.collapse() {
       Ok(Observation::Incomplete(_)) => {
@@ -170,11 +160,8 @@ where
   print_state(state);
 }
 
-fn print_state<T: TypeAtlas<DIM>, const DIM: usize>(state: State<T, DIM>)
-where
-  T::Variant: Display,
-{
-  let data: Vec<_> = state.into();
+fn print_state(state: State<TextMaze, 2>) {
+  let data: Vec<_> = state.data_default(' ');
 
   let output = itertools::join(
     (0..ROWS).map(|i| {
