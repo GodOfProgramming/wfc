@@ -9,6 +9,8 @@ pub(crate) mod rules;
 pub(crate) mod state;
 pub(crate) mod util;
 
+use derive_more::derive::{Deref, DerefMut};
+use derive_new::new;
 pub use strum;
 
 use cells::Cells;
@@ -29,7 +31,7 @@ pub mod prelude {
     collapse,
     err::Error,
     prebuilt,
-    rules::{Rule, Rules},
+    rules::{AbstractRule, AbstractRules, Legend, Rule, RuleBuilder, Rules},
     state::{State, StateBuilder},
     util::{IPos, Size, UPos},
     Observation, TypeAtlas,
@@ -38,13 +40,31 @@ pub mod prelude {
 
 pub use prelude::*;
 
+pub type CellIndex = usize;
+pub type VariantId = usize;
+pub type SocketId = usize;
+
+#[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct DimensionId(usize);
+impl DimensionId {
+  fn opposite(self) -> Self {
+    if *self & 1 == 0 {
+      Self(*self + 1)
+    } else {
+      Self(*self - 1)
+    }
+  }
+}
+
 #[profiling::function]
 pub fn collapse<A, C, T: TypeAtlas<DIM>, const DIM: usize>(
   state: &mut State<A, C, T, DIM>,
-) -> TResult<(), T, DIM>
+) -> Result<(), err::Error<DIM>>
 where
-  A: Arbiter<T, DIM>,
-  C: Constraint<T::Socket>,
+  A: Arbiter,
+  C: Constraint,
 {
   loop {
     if state.collapse()?.complete() {
@@ -58,18 +78,18 @@ pub trait TypeAtlas<const DIM: usize>
 where
   Self: Debug + Sized,
 {
-  type Variant: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
-  type Socket: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
+  type Variant: Variant + ext::MaybeSerde;
+  type Socket: Socket + ext::MaybeSerde;
   type Dimension: Dimension + ext::MaybeSerde;
 }
 
-pub type TResult<Ok, T, const DIM: usize> = Result<Ok, TError<T, DIM>>;
-pub type TError<T, const DIM: usize> = Error<
-  <T as TypeAtlas<DIM>>::Variant,
-  <T as TypeAtlas<DIM>>::Dimension,
-  <T as TypeAtlas<DIM>>::Socket,
-  DIM,
->;
+pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
+
+impl<T> Variant for T where T: Debug + Eq + Hash + Ord + Clone {}
+
+pub trait Socket: Debug + Eq + Hash + Ord + Clone {}
+
+impl<T> Socket for T where T: Debug + Eq + Hash + Ord + Clone {}
 
 pub trait Dimension:
   PartialEq<Self>
@@ -105,22 +125,26 @@ impl Observation {
   }
 }
 
-pub trait Arbiter<T: TypeAtlas<DIM>, const DIM: usize>: Adjuster<T, DIM> {
-  fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM>;
+pub trait Arbiter: Adjuster {
+  fn designate<const DIM: usize>(
+    &mut self,
+    cells: &mut Cells<DIM>,
+  ) -> Result<Option<usize>, err::Error<DIM>>;
 }
 
-pub trait Adjuster<T: TypeAtlas<DIM>, const DIM: usize> {
-  type Chained<C: Adjuster<T, DIM>>: Adjuster<T, DIM>;
+pub trait Adjuster {
+  type Chained<C: Adjuster>: Adjuster;
 
-  fn revise(&mut self, variant: &T::Variant, cells: &mut Cells<T, DIM>);
+  /// Perform any mutations to the Cells upon a variant being selected
+  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>);
 
   fn chain<A>(self, other: A) -> Self::Chained<A>
   where
-    A: Adjuster<T, DIM>;
+    A: Adjuster;
 }
 
-pub trait Constraint<S>: Debug {
-  fn check(&self, variant_socket: &S, sockets: &HashSet<S>) -> bool;
+pub trait Constraint: Debug {
+  fn check(&self, socket: SocketId, all_connecting_sockets: &HashSet<SocketId>) -> bool;
 }
 
 pub trait Weight:
@@ -151,14 +175,19 @@ impl<T> Weight for T where
 {
 }
 
-pub trait Shape<T: TypeAtlas<DIM>, const DIM: usize>: Debug {
+pub trait Shape: Debug {
   type Weight: Weight;
-  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> Self::Weight;
+  fn weight<const DIM: usize>(
+    &self,
+    variant: VariantId,
+    index: CellIndex,
+    cells: &Cells<DIM>,
+  ) -> Self::Weight;
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::{ext::TypeAtlasExt, prelude::*};
+  use crate::{ext::TypeAtlasExt, prelude::*, rules::RuleBuilder};
   use maplit::hashmap;
   use prebuilt::{
     arbiters::WeightArbiter, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
@@ -195,59 +224,66 @@ mod tests {
 
   #[test]
   fn same_seed_produces_same_gen() {
-    let rules = hashmap! {
-      Tiles::TileA => Rule::new(hashmap! {
-        Dim2d::Up    => Some(Sockets::Any),
-        Dim2d::Down  =>Some(Sockets::Any),
-        Dim2d::Left  =>Some(Sockets::Any),
-        Dim2d::Right =>Some(Sockets::Any),
-      }),
-      Tiles::TileB => Rule::new(hashmap!{
-        Dim2d::Up    => Some(Sockets::Any),
-        Dim2d::Down  => Some(Sockets::Any),
-        Dim2d::Left  => Some(Sockets::Any),
-        Dim2d::Right => Some(Sockets::Any),
-       }),
-      Tiles::TileC => Rule::new(hashmap! {
-        Dim2d::Up    => Some(Sockets::Any),
-        Dim2d::Down  => Some(Sockets::Any),
-        Dim2d::Left  => Some(Sockets::Any),
-        Dim2d::Right => Some(Sockets::Any),
-       }),
-    };
+    let rules = RuleBuilder::default()
+      .with_rule(
+        Tiles::TileA,
+        hashmap! {
+          Dim2d::Up    => Some(Sockets::Any),
+          Dim2d::Down  =>Some(Sockets::Any),
+          Dim2d::Left  =>Some(Sockets::Any),
+          Dim2d::Right =>Some(Sockets::Any),
+        },
+      )
+      .with_rule(
+        Tiles::TileB,
+        hashmap! {
+         Dim2d::Up    => Some(Sockets::Any),
+         Dim2d::Down  => Some(Sockets::Any),
+         Dim2d::Left  => Some(Sockets::Any),
+         Dim2d::Right => Some(Sockets::Any),
+        },
+      )
+      .with_rule(
+        Tiles::TileC,
+        hashmap! {
+         Dim2d::Up    => Some(Sockets::Any),
+         Dim2d::Down  => Some(Sockets::Any),
+         Dim2d::Left  => Some(Sockets::Any),
+         Dim2d::Right => Some(Sockets::Any),
+        },
+      )
+      .into();
 
     let weights = hashmap! {
       Tiles::TileA => 3,
       Tiles::TileB => 2,
     };
 
-    let mut a_builder = StateBuilder::<
-      WeightArbiter<WeightedShape<u8, TestMode, 2>, TestMode, 2>,
+    let a_builder = StateBuilder::<
+      WeightArbiter<WeightedShape<u8>>,
       UnaryConstraint,
       TestMode,
       { TestMode::DIM },
     >::new(
       [5, 5],
-      WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
+      WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone(), &rules)),
       UnaryConstraint,
+      rules.clone(),
     );
-
-    a_builder.with_rules(rules.clone());
 
     let mut a = a_builder.build().unwrap();
 
-    let mut b_builder = StateBuilder::<
-      WeightArbiter<WeightedShape<u8, TestMode, 2>, TestMode, 2>,
+    let b_builder = StateBuilder::<
+      WeightArbiter<WeightedShape<u8>>,
       UnaryConstraint,
       TestMode,
       { TestMode::DIM },
     >::new(
       [5, 5],
-      WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
+      WeightArbiter::new(Some(SEED), WeightedShape::new(weights, &rules)),
       UnaryConstraint,
+      rules,
     );
-
-    b_builder.with_rules(rules);
 
     let mut b = b_builder.build().unwrap();
 

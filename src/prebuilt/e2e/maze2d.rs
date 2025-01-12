@@ -253,41 +253,35 @@ mod tests {
 
     let rules = finder.find().unwrap();
 
-    let weights: HashMap<char, usize> = rules.keys().map(|k| (*k, 1)).collect();
+    let weights = rules
+      .variants()
+      .map(|k| (*k, 1))
+      .collect::<HashMap<char, usize>>();
 
     let shape = MultiShape::new(
-      WeightedShape::new(weights),
+      WeightedShape::new(weights, &rules),
       InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
     );
 
-    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
-      TextMaze::ENTRANCE => 0,
-      TextMaze::EXIT => 0,
-    }));
+    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(
+      hashmap! {
+        TextMaze::ENTRANCE => 0,
+        TextMaze::EXIT => 0,
+      },
+      &rules,
+    ));
 
     let mut builder = StateBuilder::<
       MultiPhaseArbitration<
-        WeightArbiter<
-          MultiShape<
-            WeightedShape<usize, TextMaze, 2>,
-            InformedShape<usize, TextMaze, 2>,
-            TextMaze,
-            2,
-          >,
-          TextMaze,
-          2,
-        >,
-        LimitAdjuster<TextMaze, 2>,
-        TextMaze,
-        2,
+        WeightArbiter<MultiShape<WeightedShape<usize>, InformedShape<usize>>>,
+        LimitAdjuster,
       >,
       UnaryConstraint,
       TextMaze,
       2,
-    >::new([COLS, ROWS], arbiter, UnaryConstraint);
+    >::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
     builder
-      .with_rules(rules)
       .insert([0, 0], TextMaze::ENTRANCE)
       .insert([COLS - 1, ROWS - 1], TextMaze::EXIT);
 

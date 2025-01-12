@@ -1,43 +1,40 @@
-use crate::{cells::Cells, Adjuster, Arbiter, Error, Shape, TResult, TypeAtlas};
+use crate::{
+  cells::Cells, err, Adjuster, Arbiter, CellIndex, Dimension, Error, Rules, Shape, Socket, Variant,
+  VariantId,
+};
 use derive_more::derive::{Deref, DerefMut};
 use rand::{
   seq::{IteratorRandom, SliceRandom},
   thread_rng, Rng, SeedableRng,
 };
 use rand_chacha::ChaCha20Rng;
-use std::{collections::HashMap, iter::Iterator, marker::PhantomData};
+use std::{borrow::Borrow, collections::HashMap, iter::Iterator};
 
 #[derive(Debug)]
-pub struct RandomArbiter<T: TypeAtlas<DIM>, const DIM: usize> {
+pub struct RandomArbiter {
   seed: u64,
   rng: ChaCha20Rng,
-  _pd: PhantomData<T>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Default for RandomArbiter<T, DIM> {
+impl Default for RandomArbiter {
   fn default() -> Self {
     let seed = thread_rng().gen();
     let rng = ChaCha20Rng::seed_from_u64(seed);
 
-    Self {
-      seed,
-      rng,
-      _pd: PhantomData,
-    }
+    Self { seed, rng }
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for RandomArbiter<T, DIM> {
+impl Clone for RandomArbiter {
   fn clone(&self) -> Self {
     Self {
       seed: self.seed,
       rng: self.rng.clone(),
-      _pd: PhantomData,
     }
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> RandomArbiter<T, DIM> {
+impl RandomArbiter {
   pub fn new(seed: Option<u64>) -> Self {
     let (rng, seed) = seed
       .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
@@ -46,11 +43,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> RandomArbiter<T, DIM> {
         (ChaCha20Rng::seed_from_u64(seed), seed)
       });
 
-    Self {
-      seed,
-      rng,
-      _pd: PhantomData,
-    }
+    Self { seed, rng }
   }
 
   pub fn seed(&self) -> u64 {
@@ -58,9 +51,12 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> RandomArbiter<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for RandomArbiter<T, DIM> {
+impl Arbiter for RandomArbiter {
   #[profiling::function]
-  fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM> {
+  fn designate<const DIM: usize>(
+    &mut self,
+    cells: &mut Cells<DIM>,
+  ) -> Result<Option<CellIndex>, err::Error<DIM>> {
     let Some(indexes) = cells.lowest_entropy_indexes() else {
       return Ok(None);
     };
@@ -82,30 +78,29 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for RandomArbiter<T, D
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for RandomArbiter<T, DIM> {
-  type Chained<C: Adjuster<T, DIM>> = MultiPhaseArbitration<Self, C, T, DIM>;
+impl Adjuster for RandomArbiter {
+  type Chained<C: Adjuster> = MultiPhaseArbitration<Self, C>;
 
-  fn revise(&mut self, _variant: &T::Variant, _cells: &mut Cells<T, DIM>) {}
+  fn revise<const DIM: usize>(&mut self, _variant: VariantId, _cells: &mut Cells<DIM>) {}
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster<T, DIM>,
+    C: Adjuster,
   {
     MultiPhaseArbitration::new(self, other)
   }
 }
 
 #[derive(Debug)]
-pub struct WeightArbiter<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> {
+pub struct WeightArbiter<S: Shape> {
   seed: u64,
   rng: ChaCha20Rng,
   shape: S,
-  _pd: PhantomData<T>,
 }
 
-impl<S, T: TypeAtlas<DIM>, const DIM: usize> Default for WeightArbiter<S, T, DIM>
+impl<S: Shape> Default for WeightArbiter<S>
 where
-  S: Shape<T, DIM> + Default,
+  S: Default,
 {
   fn default() -> Self {
     let seed = thread_rng().gen();
@@ -115,26 +110,24 @@ where
       seed,
       rng,
       shape: S::default(),
-      _pd: PhantomData,
     }
   }
 }
 
-impl<S, T: TypeAtlas<DIM>, const DIM: usize> Clone for WeightArbiter<S, T, DIM>
+impl<S: Shape> Clone for WeightArbiter<S>
 where
-  S: Shape<T, DIM> + Clone,
+  S: Clone,
 {
   fn clone(&self) -> Self {
     Self {
       seed: self.seed,
       rng: self.rng.clone(),
       shape: self.shape.clone(),
-      _pd: PhantomData,
     }
   }
 }
 
-impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> WeightArbiter<S, T, DIM> {
+impl<S: Shape> WeightArbiter<S> {
   pub fn new(seed: Option<u64>, shape: S) -> Self {
     let (rng, seed) = seed
       .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
@@ -143,12 +136,7 @@ impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> WeightArbiter<S, T, 
         (ChaCha20Rng::seed_from_u64(seed), seed)
       });
 
-    Self {
-      seed,
-      rng,
-      shape,
-      _pd: PhantomData,
-    }
+    Self { seed, rng, shape }
   }
 
   pub fn seed(&self) -> u64 {
@@ -156,11 +144,12 @@ impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> WeightArbiter<S, T, 
   }
 }
 
-impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM>
-  for WeightArbiter<S, T, DIM>
-{
+impl<S: Shape> Arbiter for WeightArbiter<S> {
   #[profiling::function]
-  fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM> {
+  fn designate<const DIM: usize>(
+    &mut self,
+    cells: &mut Cells<DIM>,
+  ) -> Result<Option<usize>, err::Error<DIM>> {
     let Some(indexes) = cells.lowest_entropy_indexes() else {
       return Ok(None);
     };
@@ -175,7 +164,7 @@ impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM>
         .iter()
         .collect::<Vec<_>>()
         .choose_weighted(&mut self.rng, |variant| {
-          self.shape.weight(variant, index, cells)
+          self.shape.weight(**variant, index, cells)
         })
         .cloned()
         .cloned()
@@ -186,42 +175,48 @@ impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM>
   }
 }
 
-impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM>
-  for WeightArbiter<S, T, DIM>
-{
-  type Chained<C: Adjuster<T, DIM>> = MultiPhaseArbitration<Self, C, T, DIM>;
+impl<S: Shape> Adjuster for WeightArbiter<S> {
+  type Chained<C: Adjuster> = MultiPhaseArbitration<Self, C>;
 
-  fn revise(&mut self, _variant: &T::Variant, _cells: &mut Cells<T, DIM>) {}
+  fn revise<const DIM: usize>(&mut self, _variant: VariantId, _cells: &mut Cells<DIM>) {}
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster<T, DIM>,
+    C: Adjuster,
   {
     MultiPhaseArbitration::new(self, other)
   }
 }
 
 #[derive(Debug, Deref, DerefMut)]
-pub struct LimitAdjuster<T: TypeAtlas<DIM>, const DIM: usize>(HashMap<T::Variant, usize>);
+pub struct LimitAdjuster(HashMap<VariantId, usize>);
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for LimitAdjuster<T, DIM> {
+impl Clone for LimitAdjuster {
   fn clone(&self) -> Self {
     Self(self.0.clone())
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> LimitAdjuster<T, DIM> {
-  pub fn new(limits: impl Into<HashMap<T::Variant, usize>>) -> Self {
-    Self(limits.into())
+impl LimitAdjuster {
+  pub fn new<V: Variant, D: Dimension, S: Socket>(
+    limits: impl IntoIterator<Item = (V, usize)>,
+    rules: impl Borrow<Rules<V, D, S>>,
+  ) -> Self {
+    Self(
+      limits
+        .into_iter()
+        .map(|(v, count)| (rules.borrow().legend().variant_id(&v), count))
+        .collect(),
+    )
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for LimitAdjuster<T, DIM> {
-  type Chained<C: Adjuster<T, DIM>> = (Self, C);
+impl Adjuster for LimitAdjuster {
+  type Chained<C: Adjuster> = (Self, C);
 
   #[profiling::function]
-  fn revise(&mut self, variant: &T::Variant, cells: &mut Cells<T, DIM>) {
-    let Some(limit) = self.get_mut(variant) else {
+  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>) {
+    let Some(limit) = self.get_mut(&variant) else {
       return;
     };
 
@@ -245,96 +240,91 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for LimitAdjuster<T, 
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster<T, DIM>,
+    C: Adjuster,
   {
     (self, other)
   }
 }
 
-pub struct MultiPhaseArbitration<A, Adj, T: TypeAtlas<DIM>, const DIM: usize>
+pub struct MultiPhaseArbitration<A, Adj>
 where
-  A: Arbiter<T, DIM>,
-  Adj: Adjuster<T, DIM>,
+  A: Arbiter,
+  Adj: Adjuster,
 {
   arbiter: A,
   adjuster: Adj,
-  _pd: PhantomData<T>,
 }
 
-impl<A, Adj, T: TypeAtlas<DIM>, const DIM: usize> Clone for MultiPhaseArbitration<A, Adj, T, DIM>
+impl<A, Adj> Clone for MultiPhaseArbitration<A, Adj>
 where
-  A: Arbiter<T, DIM> + Clone,
-  Adj: Adjuster<T, DIM> + Clone,
+  A: Arbiter + Clone,
+  Adj: Adjuster + Clone,
 {
   fn clone(&self) -> Self {
     Self {
       arbiter: self.arbiter.clone(),
       adjuster: self.adjuster.clone(),
-      _pd: PhantomData,
     }
   }
 }
 
-impl<A, Adj, T: TypeAtlas<DIM>, const DIM: usize> MultiPhaseArbitration<A, Adj, T, DIM>
+impl<A, Adj> MultiPhaseArbitration<A, Adj>
 where
-  A: Arbiter<T, DIM>,
-  Adj: Adjuster<T, DIM>,
+  A: Arbiter,
+  Adj: Adjuster,
 {
   pub fn new(arbiter: A, adjuster: Adj) -> Self {
-    Self {
-      arbiter,
-      adjuster,
-      _pd: PhantomData,
-    }
+    Self { arbiter, adjuster }
   }
 }
 
-impl<A, Adj, T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM>
-  for MultiPhaseArbitration<A, Adj, T, DIM>
+impl<A, Adj> Arbiter for MultiPhaseArbitration<A, Adj>
 where
-  A: Arbiter<T, DIM>,
-  Adj: Adjuster<T, DIM>,
+  A: Arbiter,
+  Adj: Adjuster,
 {
-  fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM> {
+  fn designate<const DIM: usize>(
+    &mut self,
+    cells: &mut Cells<DIM>,
+  ) -> Result<Option<usize>, err::Error<DIM>> {
     self.arbiter.designate(cells)
   }
 }
 
-impl<A, Adj, T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM>
-  for MultiPhaseArbitration<A, Adj, T, DIM>
+impl<A, Adj> Adjuster for MultiPhaseArbitration<A, Adj>
 where
-  A: Arbiter<T, DIM>,
-  Adj: Adjuster<T, DIM>,
+  A: Arbiter,
+  Adj: Adjuster,
 {
-  type Chained<C: Adjuster<T, DIM>> = MultiPhaseArbitration<A, (Adj, C), T, DIM>;
+  type Chained<C: Adjuster> = MultiPhaseArbitration<A, (Adj, C)>;
 
-  fn revise(&mut self, variant: &T::Variant, cells: &mut Cells<T, DIM>) {
+  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>) {
     self.adjuster.revise(variant, cells);
   }
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster<T, DIM>,
+    C: Adjuster,
   {
     MultiPhaseArbitration::new(self.arbiter, (self.adjuster, other))
   }
 }
 
-impl<A0, A1, T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for (A0, A1)
+impl<A0, A1> Adjuster for (A0, A1)
 where
-  A0: Adjuster<T, DIM>,
-  A1: Adjuster<T, DIM>,
+  A0: Adjuster,
+  A1: Adjuster,
 {
-  type Chained<C: Adjuster<T, DIM>> = ((A0, A1), C);
+  type Chained<C: Adjuster> = ((A0, A1), C);
 
-  fn revise(&mut self, variant: &T::Variant, cells: &mut Cells<T, DIM>) {
+  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>) {
     self.0.revise(variant, cells);
     self.1.revise(variant, cells);
   }
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster<T, DIM>,
+    C: Adjuster,
   {
     (self, other)
   }

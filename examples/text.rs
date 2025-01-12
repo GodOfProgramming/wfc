@@ -85,36 +85,33 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let seed: Option<u64> = args.get(1).map(|arg| arg.parse()).transpose().unwrap();
 
-  let weights = rules.keys().map(|k| (*k, 1)).collect();
+  let weights = rules.variants().map(|k| (*k, 1));
 
   let shape = MultiShape::new(
-    WeightedShape::new(weights),
+    WeightedShape::new(weights, &rules),
     InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
   );
 
   let arbiter = WeightArbiter::new(seed, shape);
   println!("Seed: {}", arbiter.seed());
 
-  let arbiter = arbiter.chain(LimitAdjuster::new(hashmap! {
-    TextMaze::ENTRANCE => 0,
-    TextMaze::EXIT => 0,
-  }));
+  let arbiter = arbiter.chain(LimitAdjuster::new(
+    hashmap! {
+      TextMaze::ENTRANCE => 0,
+      TextMaze::EXIT => 0,
+    },
+    &rules,
+  ));
 
   let mut builder = StateBuilder::<
     MultiPhaseArbitration<
-      WeightArbiter<
-        MultiShape<WeightedShape<u8, TextMaze, 2>, InformedShape<u8, TextMaze, 2>, TextMaze, 2>,
-        TextMaze,
-        2,
-      >,
-      LimitAdjuster<TextMaze, 2>,
-      TextMaze,
-      2,
+      WeightArbiter<MultiShape<WeightedShape<u8>, InformedShape<u8>>>,
+      LimitAdjuster,
     >,
     UnaryConstraint,
     TextMaze,
     2,
-  >::new([COLS, ROWS], arbiter, UnaryConstraint);
+  >::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];
@@ -123,7 +120,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     .with_ext(Dim2d::Down, vertical)
     .with_ext(Dim2d::Left, horizontal.clone())
     .with_ext(Dim2d::Right, horizontal)
-    .with_rules(rules)
     .insert([0, 0], TextMaze::ENTRANCE)
     .insert([COLS - 1, ROWS - 1], TextMaze::EXIT);
 
@@ -141,8 +137,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn all_at_once<A, C, T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<A, C, T, DIM>)
 where
   T::Variant: Display,
-  A: Arbiter<T, DIM>,
-  C: Constraint<T::Socket>,
+  A: Arbiter,
+  C: Constraint,
 {
   if let Err(e) = wfc::collapse(&mut state) {
     eprintln!("{e}");
@@ -155,8 +151,8 @@ where
 fn step_by_step<A, C, T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<A, C, T, DIM>)
 where
   T::Variant: Default + Display,
-  A: Arbiter<T, DIM>,
-  C: Constraint<T::Socket>,
+  A: Arbiter,
+  C: Constraint,
 {
   'c: loop {
     match state.collapse() {
@@ -191,8 +187,8 @@ where
 fn print_state<A, C, T: TypeAtlas<DIM>, const DIM: usize>(state: State<A, C, T, DIM>)
 where
   T::Variant: Display,
-  A: Arbiter<T, DIM>,
-  C: Constraint<T::Socket>,
+  A: Arbiter,
+  C: Constraint,
 {
   let data: Vec<_> = state.into();
 

@@ -1,7 +1,6 @@
-use maplit::hashmap;
-use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
+use prebuilt::{arbiters::RandomArbiter, constraints::UnaryConstraint};
 use std::collections::BTreeSet;
-use wfc::{prebuilt::Dim3d, prelude::*, Rule, StateBuilder};
+use wfc::{prebuilt::Dim3d, prelude::*, StateBuilder};
 
 #[derive(Debug)]
 struct Bench;
@@ -16,18 +15,19 @@ fn main() {
   #[cfg(feature = "profiling")]
   let _guards = wfc::perf::enable_profiling();
 
-  let mut builder = StateBuilder::<RandomArbiter<Bench, 3>, SetConstraint, Bench, 3>::new(
+  let rules = RuleBuilder::default()
+    .with_rule(0, |_| BTreeSet::from_iter([0, 1]))
+    .with_rule(1, |_| BTreeSet::from_iter([0, 1, 2]))
+    .with_rule(2, |_| BTreeSet::from_iter([1, 2, 3]))
+    .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
+    .into();
+
+  let builder = StateBuilder::<RandomArbiter, UnaryConstraint, Bench, 3>::new(
     [50, 50, 50],
     RandomArbiter::default(),
-    SetConstraint,
+    UnaryConstraint,
+    rules,
   );
-
-  builder.with_rules(hashmap! {
-    0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),
-    1 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1, 2])),
-    2 => Rule::from_fn(|_| BTreeSet::from_iter([1, 2, 3])),
-    3 => Rule::from_fn(|_| BTreeSet::from_iter([2, 3])),
-  });
 
   let mut state = builder.build().expect("Failed to build state");
 

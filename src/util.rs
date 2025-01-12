@@ -1,4 +1,4 @@
-use crate::err::ConversionError;
+use crate::{err::ConversionError, DimensionId};
 use derive_more::derive::{Deref, DerefMut};
 use nalgebra::SVector;
 use std::{
@@ -211,22 +211,27 @@ impl<const DIM: usize> TryFrom<IPos<DIM>> for UPos<DIM> {
   }
 }
 
+impl<const DIM: usize> Add<DimensionId> for IPos<DIM> {
+  type Output = Self;
+
+  fn add(mut self, rhs: DimensionId) -> Self::Output {
+    let even = *rhs & 1 == 0;
+    let offset = if even { -1 } else { 1 };
+    let arr_index = *rhs / 2;
+    self[arr_index] += offset;
+    self
+  }
+}
+
 impl<D, const DIM: usize> Add<D> for IPos<DIM>
 where
   D: IntoEnumIterator + PartialEq<D>,
 {
   type Output = Self;
 
-  fn add(mut self, rhs: D) -> Self::Output {
+  fn add(self, rhs: D) -> Self::Output {
     let index = D::iter().position(|d| d == rhs).unwrap();
-    let even = index & 1 == 0;
-    let offset = if even { -1 } else { 1 };
-
-    let arr_index = index / 2;
-
-    self[arr_index] += offset;
-
-    self
+    self + DimensionId(index)
   }
 }
 

@@ -1,6 +1,8 @@
 use crate::{
+  err,
+  rules::{AbstractRules, Legend},
   util::{self, IPos, Size},
-  Dimension, Rules, TResult, TypeAtlas, UPos,
+  CellIndex, Dimension, DimensionId, Socket, UPos, Variant, VariantId,
 };
 use derive_more::derive::Deref;
 use ordermap::OrderSet;
@@ -9,27 +11,27 @@ use std::{
   fmt::Debug,
   ops::{Index, IndexMut},
 };
-use strum::IntoEnumIterator;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct Cells<T: TypeAtlas<DIM>, const DIM: usize> {
+pub struct Cells<const DIM: usize> {
   pub size: Size<DIM>,
-  pub list: Vec<Cell<T::Variant, T::Dimension, DIM>>,
+  pub list: Vec<Cell<DIM>>,
 
   #[cfg_attr(feature = "bevy", reflect(ignore))]
   pub entropy_cache: EntropyCache,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
+impl<const DIM: usize> Cells<DIM> {
   #[profiling::function]
-  pub fn new(
+  pub fn new<V: Variant, D: Dimension, S: Socket>(
     size: Size<DIM>,
-    input: Vec<Option<T::Variant>>,
-    rules: &Rules<T::Variant, T::Dimension, T::Socket>,
+    input: Vec<Option<V>>,
+    rules: &AbstractRules,
+    legend: &Legend<V, D, S>,
   ) -> Self {
-    let all_possibilities = BTreeSet::from_iter(rules.keys().cloned());
+    let all_possibilities = BTreeSet::from_iter(rules.variants().cloned());
     let mut entropy_cache = EntropyCache::new(all_possibilities.len());
     let max_entropy = entropy_cache.len();
 
@@ -39,13 +41,13 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
       .map(|(i, input)| {
         let position = IPos::from_index(i, size);
         input
-          .map(|variant| Cell::new_collapsed(position, variant, size))
+          .map(|variant| Cell::new_collapsed(position, &variant, size, legend))
           .unwrap_or_else(|| {
             entropy_cache[max_entropy].insert(i);
-            Cell::new(position, all_possibilities.clone(), size)
+            Cell::new(position, all_possibilities.clone(), size, legend)
           })
       })
-      .collect::<Vec<Cell<T::Variant, T::Dimension, DIM>>>();
+      .collect::<Vec<Cell<DIM>>>();
 
     Self {
       size,
@@ -54,15 +56,15 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
     }
   }
 
-  pub fn at_pos(&self, pos: &IPos<DIM>) -> Option<&Cell<T::Variant, T::Dimension, DIM>> {
+  pub fn at_pos(&self, pos: &IPos<DIM>) -> Option<&Cell<DIM>> {
     self.list.get(pos.index(self.size))
   }
 
-  pub fn at(&self, index: usize) -> &Cell<T::Variant, T::Dimension, DIM> {
+  pub fn at(&self, index: usize) -> &Cell<DIM> {
     &self.list[index]
   }
 
-  pub fn at_mut(&mut self, index: usize) -> &mut Cell<T::Variant, T::Dimension, DIM> {
+  pub fn at_mut(&mut self, index: usize) -> &mut Cell<DIM> {
     &mut self.list[index]
   }
 
@@ -70,13 +72,11 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
     self.entropy_cache.set(starting_entropy, index, new_entropy);
   }
 
-  pub fn uncollapsed_indexes_along_dir(&self, dir: T::Dimension) -> Vec<usize> {
+  pub fn uncollapsed_indexes_along_dir(&self, dir: DimensionId) -> Vec<usize> {
     let mut cells = Vec::new();
 
-    let index = T::Dimension::iter().position(|d| d == dir).unwrap();
-
-    let dindex = index / 2;
-    let even = index & 1 == 0;
+    let dindex = *dir / 2;
+    let even = *dir & 1 == 0;
     let mut pos = UPos::<DIM>::default();
 
     if even {
@@ -93,13 +93,13 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
   }
 
   #[profiling::function]
-  pub fn collapse<'v, F>(&mut self, index: usize, collapse_fn: F) -> TResult<(), T, DIM>
+  pub fn collapse<'v, F>(&mut self, index: usize, collapse_fn: F) -> Result<(), err::Error<DIM>>
   where
-    F: FnOnce(&Self, &BTreeSet<T::Variant>) -> TResult<T::Variant, T, DIM>,
+    F: FnOnce(&Self, &BTreeSet<VariantId>) -> Result<VariantId, err::Error<DIM>>,
   {
     let cell = &self.at(index);
 
-    let variant = collapse_fn(self, &cell.possibilities)?.clone();
+    let variant = collapse_fn(self, &cell.possibilities)?;
 
     let cell = &mut self.list[index];
 
@@ -137,64 +137,59 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct Cell<V, D, const DIM: usize>
-where
-  V: Ord,
-{
-  pub possibilities: BTreeSet<V>,
-  pub neighbors: Vec<(usize, D)>,
+pub struct Cell<const DIM: usize> {
+  pub possibilities: BTreeSet<VariantId>,
+  pub neighbors: Vec<(CellIndex, DimensionId)>,
   pub entropy: usize,
 
   pub position: IPos<DIM>,
 }
 
-impl<V, D, const DIM: usize> Cell<V, D, DIM>
-where
-  V: Ord,
-  D: Dimension,
-{
-  fn new(position: IPos<DIM>, possibilities: impl Into<BTreeSet<V>>, size: Size<DIM>) -> Self {
+impl<const DIM: usize> Cell<DIM> {
+  fn new<V: Variant, D: Dimension, S: Socket>(
+    position: IPos<DIM>,
+    possibilities: impl Into<BTreeSet<VariantId>>,
+    size: Size<DIM>,
+    legend: &Legend<V, D, S>,
+  ) -> Self {
     let possibilities = possibilities.into();
     let entropy = possibilities.len();
     Self {
       possibilities,
       entropy,
-      neighbors: Self::neighbors(position, size),
+      neighbors: Self::neighbors(position, size, legend),
       position,
     }
   }
 
-  pub fn new_collapsed(position: IPos<DIM>, collapsed_variant: V, size: Size<DIM>) -> Self
-  where
-    V: Ord,
-  {
+  pub fn new_collapsed<V: Variant, D: Dimension, S: Socket>(
+    position: IPos<DIM>,
+    collapsed_variant: &V,
+    size: Size<DIM>,
+    legend: &Legend<V, D, S>,
+  ) -> Self {
     Self {
-      possibilities: BTreeSet::from_iter([collapsed_variant]),
+      possibilities: BTreeSet::from_iter([legend.variant_id(collapsed_variant)]),
       entropy: 0,
-      neighbors: Self::neighbors(position, size),
+      neighbors: Self::neighbors(position, size, legend),
       position,
     }
   }
 
-  pub fn selected_variant(&self) -> Option<&V> {
+  pub fn selected_variant(&self) -> Option<VariantId> {
     self
       .collapsed()
-      .then(|| self.possibilities.iter().next().unwrap())
+      .then(|| self.possibilities.iter().next().cloned())
+      .flatten()
   }
 
-  pub fn collapse(&mut self, variant: V)
-  where
-    V: Ord,
-  {
+  pub fn collapse(&mut self, variant: VariantId) {
     self.possibilities = BTreeSet::from([variant]);
     self.entropy = 0;
   }
 
-  pub fn remove_variant(&mut self, variant: &V)
-  where
-    V: Ord,
-  {
-    self.possibilities.remove(variant);
+  pub fn remove_variant(&mut self, variant: VariantId) {
+    self.possibilities.remove(&variant);
     self.entropy = self.possibilities.len();
   }
 
@@ -202,11 +197,17 @@ where
     self.entropy == 0
   }
 
-  fn neighbors(position: IPos<DIM>, size: Size<DIM>) -> Vec<(usize, D)> {
+  fn neighbors<V: Variant, D: Dimension, S: Socket>(
+    position: IPos<DIM>,
+    size: Size<DIM>,
+    legend: &Legend<V, D, S>,
+  ) -> Vec<(CellIndex, DimensionId)> {
     D::iter()
       .filter_map(|dir| {
-        let npos = position + dir;
-        size.contains(&npos).then(|| (npos.index(size), dir))
+        let npos = position + legend.dimension_id(&dir);
+        size
+          .contains(&npos)
+          .then(|| (npos.index(size), legend.dimension_id(&dir)))
       })
       .collect()
   }

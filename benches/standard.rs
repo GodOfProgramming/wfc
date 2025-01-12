@@ -78,30 +78,29 @@ mod text {
   pub fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("text-maze");
 
+    let rules = get_rules();
+
     for pow in 4_u32..8_u32 {
       let dims = 2_u32.pow(pow);
 
-      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(hashmap! {
-        TextMazeBench::ENTRANCE => 0,
-        TextMazeBench::EXIT => 0,
-      }));
+      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(
+        hashmap! {
+          TextMazeBench::ENTRANCE => 0,
+          TextMazeBench::EXIT => 0,
+        },
+        &rules,
+      ));
 
       let size = Size::new([dims as usize, dims as usize]);
 
       let mut builder = StateBuilder::<
-        MultiPhaseArbitration<
-          RandomArbiter<TextMazeBench, 2>,
-          LimitAdjuster<TextMazeBench, 2>,
-          TextMazeBench,
-          2,
-        >,
+        MultiPhaseArbitration<RandomArbiter, LimitAdjuster>,
         UnaryConstraint,
         TextMazeBench,
         2,
-      >::new(size, arbiter, UnaryConstraint);
+      >::new(size, arbiter, UnaryConstraint, rules.clone());
 
       builder
-        .with_rules(get_rules())
         .insert([size.x - 1, size.y - 1], TextMazeBench::EXIT)
         .insert([0, 0], TextMazeBench::ENTRANCE);
 
@@ -113,8 +112,8 @@ mod text {
 
   fn execute<A, C>(builder: StateBuilder<A, C, TextMazeBench, 2>)
   where
-    A: Arbiter<TextMazeBench, 2>,
-    C: Constraint<<TextMazeBench as TypeAtlas<2>>::Socket>,
+    A: Arbiter,
+    C: Constraint,
   {
     let mut state = builder.build().expect("Failed to build state");
 
@@ -125,10 +124,9 @@ mod text {
 mod misc {
   use crate::SEED;
   use criterion::Criterion;
-  use maplit::hashmap;
-  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
+  use prebuilt::{arbiters::RandomArbiter, constraints::UnaryConstraint};
   use std::collections::BTreeSet;
-  use wfc::{prebuilt::Dim3d, prelude::*, Rule, Size, StateBuilder};
+  use wfc::{prebuilt::Dim3d, prelude::*, Size, StateBuilder};
 
   #[derive(Debug)]
   struct Bench;
@@ -147,17 +145,19 @@ mod misc {
   }
 
   fn execute(size: impl Into<Size<3>>) {
-    let mut builder = StateBuilder::<RandomArbiter<Bench, 3>, SetConstraint, Bench, 3>::new(
+    let rules = RuleBuilder::default()
+      .with_rule(0, |_| BTreeSet::from_iter([0, 1]))
+      .with_rule(1, |_| BTreeSet::from_iter([0, 1, 2]))
+      .with_rule(2, |_| BTreeSet::from_iter([1, 2, 3]))
+      .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
+      .into();
+
+    let builder = StateBuilder::<RandomArbiter, UnaryConstraint, Bench, 3>::new(
       size,
       RandomArbiter::new(Some(SEED)),
-      SetConstraint,
+      UnaryConstraint,
+      rules,
     );
-    builder.with_rules(hashmap! {
-      0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),
-      1 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1, 2])),
-      2 => Rule::from_fn(|_| BTreeSet::from_iter([1, 2, 3])),
-      3 => Rule::from_fn(|_| BTreeSet::from_iter([2, 3])),
-    });
     let mut state = builder.build().expect("Failed to build state");
     wfc::collapse(&mut state).expect("Failed to collapse");
   }

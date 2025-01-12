@@ -6,6 +6,7 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
+bimap = "0.6.3"
 derive-new = "0.7.0"
 derive_more = { version = "1.0", features = ["full"] }
 itertools = "0.14.0"
@@ -51,6 +52,7 @@ serde = [
   "nalgebra/serde",
   "nalgebra/serde-serialize",
   "ordermap/serde",
+  "bimap/serde",
 ]
 
 bevy = ["dep:bevy_reflect", "dep:bevy_utils"]
