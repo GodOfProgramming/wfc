@@ -12,19 +12,19 @@ mod text {
   use maplit::hashmap;
   use wfc::{
     prebuilt::{
-      arbiters::{LimitAdjuster, MultiPhaseArbitration, RandomArbiter},
+      arbiters::{LimitAdjuster, RandomArbiter},
       auto::GenericFinder,
       constraints::UnaryConstraint,
-      e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
+      e2e::maze2d::{Maze2dTypeSet, MazeRuleProvider, Socket},
       Dim2d,
     },
-    Adjuster, Arbiter, Constraint, RuleFinder, Rules, Size, StateBuilder, TypeAtlas,
+    Adjuster, Arbiter, Constraint, RuleFinder, Rules, Size, StateBuilder,
   };
 
   #[derive(Debug)]
   struct TextMazeBench;
 
-  impl Maze2dTechnique for TextMazeBench {
+  impl Maze2dTypeSet<char> for TextMazeBench {
     const ENTRANCE: char = 'E';
     const EXIT: char = 'X';
     const EMPTY: char = ' ';
@@ -41,17 +41,7 @@ mod text {
     const THREE_WAY_LEFT: char = '╣';
   }
 
-  impl TypeAtlas<2> for TextMazeBench {
-    type Dimension = Dim2d;
-    type Variant = char;
-    type Socket = Option<Socket>;
-  }
-
-  fn get_rules() -> Rules<
-    <TextMazeBench as TypeAtlas<2>>::Variant,
-    <TextMazeBench as TypeAtlas<2>>::Dimension,
-    <TextMazeBench as TypeAtlas<2>>::Socket,
-  > {
+  fn get_rules() -> Rules<char, Dim2d, Option<Socket>> {
     let rows = 7;
     let cols = 10;
     let source = "\
@@ -67,7 +57,7 @@ mod text {
     .collect::<Vec<_>>();
 
     let finder = GenericFinder::new(
-      MazeRuleProvider::<TextMazeBench>::default(),
+      MazeRuleProvider::<char, TextMazeBench>::default(),
       source,
       [cols, rows],
     );
@@ -93,12 +83,7 @@ mod text {
 
       let size = Size::new([dims as usize, dims as usize]);
 
-      let mut builder = StateBuilder::<
-        MultiPhaseArbitration<RandomArbiter, LimitAdjuster>,
-        UnaryConstraint,
-        TextMazeBench,
-        2,
-      >::new(size, arbiter, UnaryConstraint, rules.clone());
+      let mut builder = StateBuilder::new(size, arbiter, UnaryConstraint, rules.clone());
 
       builder
         .insert([size.x - 1, size.y - 1], TextMazeBench::EXIT)
@@ -110,7 +95,7 @@ mod text {
     }
   }
 
-  fn execute<A, C>(builder: StateBuilder<A, C, TextMazeBench, 2>)
+  fn execute<A, C>(builder: StateBuilder<A, C, char, Dim2d, Option<Socket>, 2>)
   where
     A: Arbiter,
     C: Constraint,
@@ -128,15 +113,6 @@ mod misc {
   use std::collections::BTreeSet;
   use wfc::{prebuilt::Dim3d, prelude::*, Size, StateBuilder};
 
-  #[derive(Debug)]
-  struct Bench;
-
-  impl TypeAtlas<3> for Bench {
-    type Variant = usize;
-    type Dimension = Dim3d;
-    type Socket = BTreeSet<usize>;
-  }
-
   pub fn bench(c: &mut Criterion) {
     c.benchmark_group("misc")
       .sample_size(10)
@@ -145,19 +121,14 @@ mod misc {
   }
 
   fn execute(size: impl Into<Size<3>>) {
-    let rules = RuleBuilder::default()
+    let rules: Rules<i32, Dim3d, BTreeSet<i32>> = RuleBuilder::default()
       .with_rule(0, |_| BTreeSet::from_iter([0, 1]))
       .with_rule(1, |_| BTreeSet::from_iter([0, 1, 2]))
       .with_rule(2, |_| BTreeSet::from_iter([1, 2, 3]))
       .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
       .into();
 
-    let builder = StateBuilder::<RandomArbiter, UnaryConstraint, Bench, 3>::new(
-      size,
-      RandomArbiter::new(Some(SEED)),
-      UnaryConstraint,
-      rules,
-    );
+    let builder = StateBuilder::new(size, RandomArbiter::new(Some(SEED)), UnaryConstraint, rules);
     let mut state = builder.build().expect("Failed to build state");
     wfc::collapse(&mut state).expect("Failed to collapse");
   }

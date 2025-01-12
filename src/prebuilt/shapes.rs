@@ -3,6 +3,7 @@ use crate::{
   CellIndex, Dimension, IPos, Rules, Shape, Socket, Variant, VariantId, Weight,
 };
 use derive_more::derive::{Deref, DerefMut};
+use derive_new::new;
 use std::{borrow::Borrow, collections::HashMap, ops::Range};
 
 #[derive(Debug, Deref, DerefMut)]
@@ -152,7 +153,7 @@ impl<W: Weight> Shape for InformedShape<W> {
   }
 }
 
-#[derive(Debug)]
+#[derive(new, Debug)]
 pub struct MultiShape<S1, S2>
 where
   S1: Shape,
@@ -160,19 +161,6 @@ where
 {
   shape1: S1,
   shape2: S2,
-}
-
-impl<S1, S2> MultiShape<S1, S2>
-where
-  S1: Shape,
-  S2: Shape,
-{
-  pub fn new(shape1: impl Into<S1>, shape2: impl Into<S2>) -> Self {
-    Self {
-      shape1: shape1.into(),
-      shape2: shape2.into(),
-    }
-  }
 }
 
 impl<S1, S2> Shape for MultiShape<S1, S2>

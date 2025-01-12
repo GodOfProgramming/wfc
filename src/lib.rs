@@ -34,7 +34,7 @@ pub mod prelude {
     rules::{AbstractRule, AbstractRules, Legend, Rule, RuleBuilder, Rules},
     state::{State, StateBuilder},
     util::{IPos, Size, UPos},
-    Observation, TypeAtlas,
+    Observation,
   };
 }
 
@@ -59,12 +59,15 @@ impl DimensionId {
 }
 
 #[profiling::function]
-pub fn collapse<A, C, T: TypeAtlas<DIM>, const DIM: usize>(
-  state: &mut State<A, C, T, DIM>,
+pub fn collapse<A, C, V, D, S, const DIM: usize>(
+  state: &mut State<A, C, V, D, S, DIM>,
 ) -> Result<(), err::Error<DIM>>
 where
   A: Arbiter,
   C: Constraint,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
 {
   loop {
     if state.collapse()?.complete() {
@@ -72,15 +75,6 @@ where
     }
   }
   Ok(())
-}
-
-pub trait TypeAtlas<const DIM: usize>
-where
-  Self: Debug + Sized,
-{
-  type Variant: Variant + ext::MaybeSerde;
-  type Socket: Socket + ext::MaybeSerde;
-  type Dimension: Dimension + ext::MaybeSerde;
 }
 
 pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
@@ -187,7 +181,7 @@ pub trait Shape: Debug {
 
 #[cfg(test)]
 mod tests {
-  use crate::{ext::TypeAtlasExt, prelude::*, rules::RuleBuilder};
+  use crate::{prelude::*, rules::RuleBuilder};
   use maplit::hashmap;
   use prebuilt::{
     arbiters::WeightArbiter, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
@@ -211,15 +205,6 @@ mod tests {
   #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
   enum Sockets {
     Any,
-  }
-
-  #[derive(Debug)]
-  struct TestMode;
-
-  impl super::TypeAtlas<2> for TestMode {
-    type Dimension = Dim2d;
-    type Variant = Tiles;
-    type Socket = Option<Sockets>;
   }
 
   #[test]
@@ -259,12 +244,7 @@ mod tests {
       Tiles::TileB => 2,
     };
 
-    let a_builder = StateBuilder::<
-      WeightArbiter<WeightedShape<u8>>,
-      UnaryConstraint,
-      TestMode,
-      { TestMode::DIM },
-    >::new(
+    let a_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone(), &rules)),
       UnaryConstraint,
@@ -273,12 +253,7 @@ mod tests {
 
     let mut a = a_builder.build().unwrap();
 
-    let b_builder = StateBuilder::<
-      WeightArbiter<WeightedShape<u8>>,
-      UnaryConstraint,
-      TestMode,
-      { TestMode::DIM },
-    >::new(
+    let b_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights, &rules)),
       UnaryConstraint,

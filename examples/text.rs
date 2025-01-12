@@ -1,9 +1,9 @@
 use maplit::hashmap;
 use prebuilt::{
-  arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
+  arbiters::{LimitAdjuster, WeightArbiter},
   auto::GenericFinder,
   constraints::UnaryConstraint,
-  e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
+  e2e::maze2d::{Maze2dTypeSet, MazeRuleProvider},
   shapes::{InformedShape, MultiShape, WeightedShape},
   Dim2d,
 };
@@ -12,7 +12,7 @@ use std::{
   error::Error,
   fmt::{Debug, Display},
 };
-use wfc::{prelude::*, Adjuster, Arbiter, Constraint};
+use wfc::{prelude::*, Adjuster, Arbiter, Constraint, Dimension, Socket, Variant};
 
 const STEP_BY_STEP: bool = false;
 
@@ -24,7 +24,7 @@ const INFLUENCE_RADIUS: f64 = 2.0;
 #[derive(Debug)]
 struct TextMaze;
 
-impl Maze2dTechnique for TextMaze {
+impl Maze2dTypeSet<char> for TextMaze {
   const ENTRANCE: char = 'E';
   const EXIT: char = 'X';
   const EMPTY: char = '.';
@@ -39,12 +39,6 @@ impl Maze2dTechnique for TextMaze {
   const THREE_WAY_DOWN: char = '╦';
   const THREE_WAY_RIGHT: char = '╠';
   const THREE_WAY_LEFT: char = '╣';
-}
-
-impl TypeAtlas<2> for TextMaze {
-  type Dimension = Dim2d;
-  type Variant = char;
-  type Socket = Option<Socket>;
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -68,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   assert_eq!(source.len(), rows * cols);
 
   let finder = GenericFinder::new(
-    MazeRuleProvider::<TextMaze>::default(),
+    MazeRuleProvider::<char, TextMaze>::default(),
     source,
     [cols, rows],
   );
@@ -103,15 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     &rules,
   ));
 
-  let mut builder = StateBuilder::<
-    MultiPhaseArbitration<
-      WeightArbiter<MultiShape<WeightedShape<u8>, InformedShape<u8>>>,
-      LimitAdjuster,
-    >,
-    UnaryConstraint,
-    TextMaze,
-    2,
-  >::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
+  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];
@@ -134,11 +120,13 @@ fn main() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn all_at_once<A, C, T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<A, C, T, DIM>)
+fn all_at_once<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
-  T::Variant: Display,
   A: Arbiter,
   C: Constraint,
+  V: Variant + Display,
+  D: Dimension,
+  S: Socket,
 {
   if let Err(e) = wfc::collapse(&mut state) {
     eprintln!("{e}");
@@ -148,11 +136,13 @@ where
   print_state(state);
 }
 
-fn step_by_step<A, C, T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<A, C, T, DIM>)
+fn step_by_step<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
-  T::Variant: Default + Display,
   A: Arbiter,
   C: Constraint,
+  V: Variant + Display + Default,
+  D: Dimension,
+  S: Socket,
 {
   'c: loop {
     match state.collapse() {
@@ -184,11 +174,13 @@ where
   print_state(state);
 }
 
-fn print_state<A, C, T: TypeAtlas<DIM>, const DIM: usize>(state: State<A, C, T, DIM>)
+fn print_state<A, C, V, D, S, const DIM: usize>(state: State<A, C, V, D, S, DIM>)
 where
-  T::Variant: Display,
   A: Arbiter,
   C: Constraint,
+  V: Variant + Display,
+  D: Dimension,
+  S: Socket,
 {
   let data: Vec<_> = state.into();
 

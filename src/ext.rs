@@ -1,13 +1,3 @@
-use crate::TypeAtlas;
-
-pub trait TypeAtlasExt<const DIM: usize> {
-  const DIM: usize;
-}
-
-impl<T: TypeAtlas<DIM>, const DIM: usize> TypeAtlasExt<DIM> for T {
-  const DIM: usize = DIM;
-}
-
 #[cfg(not(feature = "serde"))]
 pub trait MaybeSerde {}
 
