@@ -1,7 +1,7 @@
 use crate::{
   cells::{Cell, Cells},
   util::{self, Size, UPos},
-  Adjuster, Arbiter, Constraint, Dimension, Error, Observation, Rules, TResult, TypeAtlas,
+  Arbiter, Constraint, Dimension, Error, Observation, Rules, TResult, TypeAtlas,
 };
 use derive_more::derive::{Deref, DerefMut};
 use std::{
@@ -12,21 +12,25 @@ use strum::EnumCount;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct StateBuilder<T: TypeAtlas<DIM>, const DIM: usize> {
-  arbiter: T::Arbiter,
-  constraint: T::Constraint,
+pub struct StateBuilder<A, C, T: TypeAtlas<DIM>, const DIM: usize>
+where
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
+{
+  arbiter: A,
+  constraint: C,
   size: Size<DIM>,
   input: Vec<Option<T::Variant>>,
   rules: Option<Rules<T::Variant, T::Dimension, T::Socket>>,
   external_cells: ExtCells<T, DIM>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> StateBuilder<T, DIM> {
-  pub fn new(
-    size: impl Into<Size<DIM>>,
-    adjuster: impl Into<T::Arbiter>,
-    constraint: impl Into<T::Constraint>,
-  ) -> Self {
+impl<A, C, T: TypeAtlas<DIM>, const DIM: usize> StateBuilder<A, C, T, DIM>
+where
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
+{
+  pub fn new(size: impl Into<Size<DIM>>, adjuster: impl Into<A>, constraint: impl Into<C>) -> Self {
     let size = size.into();
     Self {
       arbiter: adjuster.into(),
@@ -61,7 +65,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> StateBuilder<T, DIM> {
     &self.size
   }
 
-  pub fn build(self) -> TResult<State<T, DIM>, T, DIM> {
+  pub fn build(self) -> TResult<State<A, C, T, DIM>, T, DIM> {
     // seemingly cannot be done at compile time because
     // M::Dimensions::COUNT is not accessible inside static asserts
     if DIM != T::Dimension::COUNT / 2 {
@@ -81,10 +85,10 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> StateBuilder<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for StateBuilder<T, DIM>
+impl<A, C, T: TypeAtlas<DIM>, const DIM: usize> Clone for StateBuilder<A, C, T, DIM>
 where
-  T::Arbiter: Clone,
-  T::Constraint: Clone,
+  A: Arbiter<T, DIM> + Clone,
+  C: Constraint<T::Socket> + Clone,
 {
   fn clone(&self) -> Self {
     Self {
@@ -101,22 +105,30 @@ where
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct State<T: TypeAtlas<DIM>, const DIM: usize> {
+pub struct State<A, C, T: TypeAtlas<DIM>, const DIM: usize>
+where
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
+{
   cells: Cells<T, DIM>,
   rules: Rules<T::Variant, T::Dimension, T::Socket>,
-  arbiter: T::Arbiter,
-  constraint: T::Constraint,
+  arbiter: A,
+  constraint: C,
   socket_cache: SocketCache<T, DIM>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
+impl<A, C, T: TypeAtlas<DIM>, const DIM: usize> State<A, C, T, DIM>
+where
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
+{
   #[profiling::function]
   fn new(
     size: Size<DIM>,
     input: Vec<Option<T::Variant>>,
     rules: Rules<T::Variant, T::Dimension, T::Socket>,
-    arbiter: T::Arbiter,
-    constraint: T::Constraint,
+    arbiter: A,
+    constraint: C,
     external_cells: ExtCells<T, DIM>,
   ) -> TResult<Self, T, DIM> {
     let mut this = Self {
@@ -266,7 +278,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
     &self.rules
   }
 
-  pub fn constrainer(&self) -> &T::Constraint {
+  pub fn constrainer(&self) -> &C {
     &self.constraint
   }
 
@@ -275,7 +287,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
   #[profiling::function]
   fn constrain(
     cell: &mut Cell<T::Variant, T::Dimension, DIM>,
-    constraint: &T::Constraint,
+    constraint: &C,
     neighbor_possibilities: &BTreeSet<T::Variant>,
     neighbor_to_self_dir: &T::Dimension,
     rules: &Rules<T::Variant, T::Dimension, T::Socket>,
@@ -320,8 +332,12 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> From<State<T, DIM>> for Vec<T::Variant> {
-  fn from(value: State<T, DIM>) -> Self {
+impl<A, C, T: TypeAtlas<DIM>, const DIM: usize> From<State<A, C, T, DIM>> for Vec<T::Variant>
+where
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
+{
+  fn from(value: State<A, C, T, DIM>) -> Self {
     value
       .cells
       .list

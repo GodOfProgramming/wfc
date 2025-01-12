@@ -10,16 +10,17 @@ impl TypeAtlas<3> for Bench {
   type Variant = usize;
   type Dimension = Dim3d;
   type Socket = BTreeSet<usize>;
-  type Arbiter = RandomArbiter<Self, 3>;
-  type Constraint = SetConstraint;
 }
 
 fn main() {
   #[cfg(feature = "profiling")]
   let _guards = wfc::perf::enable_profiling();
 
-  let mut builder =
-    StateBuilder::<Bench, 3>::new([50, 50, 50], RandomArbiter::default(), SetConstraint);
+  let mut builder = StateBuilder::<RandomArbiter<Bench, 3>, SetConstraint, Bench, 3>::new(
+    [50, 50, 50],
+    RandomArbiter::default(),
+    SetConstraint,
+  );
 
   builder.with_rules(hashmap! {
     0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),

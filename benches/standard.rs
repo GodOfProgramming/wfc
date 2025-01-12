@@ -18,7 +18,7 @@ mod text {
       e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
       Dim2d,
     },
-    Adjuster, RuleFinder, Rules, Size, StateBuilder, TypeAtlas,
+    Adjuster, Arbiter, Constraint, RuleFinder, Rules, Size, StateBuilder, TypeAtlas,
   };
 
   #[derive(Debug)]
@@ -45,8 +45,6 @@ mod text {
     type Dimension = Dim2d;
     type Variant = char;
     type Socket = Option<Socket>;
-    type Constraint = UnaryConstraint;
-    type Arbiter = MultiPhaseArbitration<RandomArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
   }
 
   fn get_rules() -> Rules<
@@ -90,7 +88,17 @@ mod text {
 
       let size = Size::new([dims as usize, dims as usize]);
 
-      let mut builder = StateBuilder::<TextMazeBench, 2>::new(size, arbiter, UnaryConstraint);
+      let mut builder = StateBuilder::<
+        MultiPhaseArbitration<
+          RandomArbiter<TextMazeBench, 2>,
+          LimitAdjuster<TextMazeBench, 2>,
+          TextMazeBench,
+          2,
+        >,
+        UnaryConstraint,
+        TextMazeBench,
+        2,
+      >::new(size, arbiter, UnaryConstraint);
 
       builder
         .with_rules(get_rules())
@@ -103,7 +111,11 @@ mod text {
     }
   }
 
-  fn execute(builder: StateBuilder<TextMazeBench, 2>) {
+  fn execute<A, C>(builder: StateBuilder<A, C, TextMazeBench, 2>)
+  where
+    A: Arbiter<TextMazeBench, 2>,
+    C: Constraint<<TextMazeBench as TypeAtlas<2>>::Socket>,
+  {
     let mut state = builder.build().expect("Failed to build state");
 
     wfc::collapse(&mut state).expect("Failed to collapse");
@@ -125,8 +137,6 @@ mod misc {
     type Variant = usize;
     type Dimension = Dim3d;
     type Socket = BTreeSet<usize>;
-    type Arbiter = RandomArbiter<Self, 3>;
-    type Constraint = SetConstraint;
   }
 
   pub fn bench(c: &mut Criterion) {
@@ -137,8 +147,11 @@ mod misc {
   }
 
   fn execute(size: impl Into<Size<3>>) {
-    let mut builder =
-      StateBuilder::<Bench, 3>::new(size, RandomArbiter::new(Some(SEED)), SetConstraint);
+    let mut builder = StateBuilder::<RandomArbiter<Bench, 3>, SetConstraint, Bench, 3>::new(
+      size,
+      RandomArbiter::new(Some(SEED)),
+      SetConstraint,
+    );
     builder.with_rules(hashmap! {
       0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),
       1 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1, 2])),

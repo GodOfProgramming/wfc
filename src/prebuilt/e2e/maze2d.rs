@@ -224,17 +224,6 @@ mod tests {
     type Variant = char;
     type Dimension = Dim2d;
     type Socket = Option<Socket>;
-    type Constraint = UnaryConstraint;
-    type Arbiter = MultiPhaseArbitration<
-      WeightArbiter<
-        MultiShape<WeightedShape<usize, Self, 2>, InformedShape<usize, Self, 2>, Self, 2>,
-        Self,
-        2,
-      >,
-      LimitAdjuster<Self, 2>,
-      Self,
-      2,
-    >;
   }
 
   #[test]
@@ -271,13 +260,31 @@ mod tests {
       InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
     );
 
-    let arbiter: <TextMaze as TypeAtlas<2>>::Arbiter =
-      WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
-        TextMaze::ENTRANCE => 0,
-        TextMaze::EXIT => 0,
-      }));
+    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
+      TextMaze::ENTRANCE => 0,
+      TextMaze::EXIT => 0,
+    }));
 
-    let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstraint);
+    let mut builder = StateBuilder::<
+      MultiPhaseArbitration<
+        WeightArbiter<
+          MultiShape<
+            WeightedShape<usize, TextMaze, 2>,
+            InformedShape<usize, TextMaze, 2>,
+            TextMaze,
+            2,
+          >,
+          TextMaze,
+          2,
+        >,
+        LimitAdjuster<TextMaze, 2>,
+        TextMaze,
+        2,
+      >,
+      UnaryConstraint,
+      TextMaze,
+      2,
+    >::new([COLS, ROWS], arbiter, UnaryConstraint);
 
     builder
       .with_rules(rules)

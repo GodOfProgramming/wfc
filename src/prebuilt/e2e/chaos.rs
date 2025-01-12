@@ -1,6 +1,5 @@
 use crate::{auto::FindResult, ext, prelude::*, Constraint, Dimension, TypeAtlas};
 use derive_new::new;
-use prebuilt::arbiters::WeightArbiter;
 use std::{
   collections::{BTreeSet, HashSet},
   fmt::Debug,
@@ -16,7 +15,6 @@ pub struct ChaosMode<V, D, S, const DIM: usize, const INFLUENCE: usize>(
 impl<V, D, S, const DIM: usize, const INFLUENCE: usize> TypeAtlas<DIM>
   for ChaosMode<V, D, S, DIM, INFLUENCE>
 where
-  Self: Constraint<V>,
   V: Eq + Hash + Ord + Clone + Debug + ext::MaybeSerde,
   D: Dimension + ext::MaybeSerde,
   S: crate::Shape<Self, DIM>,
@@ -24,14 +22,11 @@ where
   type Variant = V;
   type Dimension = D;
   type Socket = V;
-  type Constraint = Self;
-  type Arbiter = WeightArbiter<S, Self, DIM>;
 }
 
 impl<V, D, S, const DIM: usize, const INFLUENCE: usize> SocketProvider<V, D, BTreeSet<V>>
   for ChaosMode<V, D, S, DIM, INFLUENCE>
 where
-  Self: Constraint<V>,
   V: Eq + Hash + Ord + Clone + Debug + ext::MaybeSerde,
   D: Dimension + ext::MaybeSerde,
   S: crate::Shape<Self, DIM>,

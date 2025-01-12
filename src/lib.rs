@@ -39,9 +39,13 @@ pub mod prelude {
 pub use prelude::*;
 
 #[profiling::function]
-pub fn collapse<T: TypeAtlas<DIM>, const DIM: usize>(
-  state: &mut State<T, DIM>,
-) -> TResult<(), T, DIM> {
+pub fn collapse<A, C, T: TypeAtlas<DIM>, const DIM: usize>(
+  state: &mut State<A, C, T, DIM>,
+) -> TResult<(), T, DIM>
+where
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
+{
   loop {
     if state.collapse()?.complete() {
       break;
@@ -57,9 +61,6 @@ where
   type Variant: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
   type Socket: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
   type Dimension: Dimension + ext::MaybeSerde;
-
-  type Arbiter: Arbiter<Self, DIM>;
-  type Constraint: Constraint<Self::Socket>;
 }
 
 pub type TResult<Ok, T, const DIM: usize> = Result<Ok, TError<T, DIM>>;
@@ -190,8 +191,6 @@ mod tests {
     type Dimension = Dim2d;
     type Variant = Tiles;
     type Socket = Option<Sockets>;
-    type Arbiter = WeightArbiter<WeightedShape<u8, Self, 2>, Self, 2>;
-    type Constraint = UnaryConstraint;
   }
 
   #[test]
@@ -222,7 +221,12 @@ mod tests {
       Tiles::TileB => 2,
     };
 
-    let mut a_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
+    let mut a_builder = StateBuilder::<
+      WeightArbiter<WeightedShape<u8, TestMode, 2>, TestMode, 2>,
+      UnaryConstraint,
+      TestMode,
+      { TestMode::DIM },
+    >::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
       UnaryConstraint,
@@ -232,7 +236,12 @@ mod tests {
 
     let mut a = a_builder.build().unwrap();
 
-    let mut b_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
+    let mut b_builder = StateBuilder::<
+      WeightArbiter<WeightedShape<u8, TestMode, 2>, TestMode, 2>,
+      UnaryConstraint,
+      TestMode,
+      { TestMode::DIM },
+    >::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
       UnaryConstraint,

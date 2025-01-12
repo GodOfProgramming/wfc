@@ -12,7 +12,7 @@ use std::{
   error::Error,
   fmt::{Debug, Display},
 };
-use wfc::{prelude::*, Adjuster};
+use wfc::{prelude::*, Adjuster, Arbiter, Constraint};
 
 const STEP_BY_STEP: bool = false;
 
@@ -45,17 +45,6 @@ impl TypeAtlas<2> for TextMaze {
   type Dimension = Dim2d;
   type Variant = char;
   type Socket = Option<Socket>;
-  type Constraint = UnaryConstraint;
-  type Arbiter = MultiPhaseArbitration<
-    WeightArbiter<
-      MultiShape<WeightedShape<u8, Self, 2>, InformedShape<u8, Self, 2>, Self, 2>,
-      Self,
-      2,
-    >,
-    LimitAdjuster<Self, 2>,
-    Self,
-    2,
-  >;
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -111,7 +100,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     TextMaze::EXIT => 0,
   }));
 
-  let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstraint);
+  let mut builder = StateBuilder::<
+    MultiPhaseArbitration<
+      WeightArbiter<
+        MultiShape<WeightedShape<u8, TextMaze, 2>, InformedShape<u8, TextMaze, 2>, TextMaze, 2>,
+        TextMaze,
+        2,
+      >,
+      LimitAdjuster<TextMaze, 2>,
+      TextMaze,
+      2,
+    >,
+    UnaryConstraint,
+    TextMaze,
+    2,
+  >::new([COLS, ROWS], arbiter, UnaryConstraint);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];
@@ -135,9 +138,11 @@ fn main() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn all_at_once<T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<T, DIM>)
+fn all_at_once<A, C, T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<A, C, T, DIM>)
 where
   T::Variant: Display,
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
 {
   if let Err(e) = wfc::collapse(&mut state) {
     eprintln!("{e}");
@@ -147,9 +152,11 @@ where
   print_state(state);
 }
 
-fn step_by_step<T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<T, DIM>)
+fn step_by_step<A, C, T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<A, C, T, DIM>)
 where
   T::Variant: Default + Display,
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
 {
   'c: loop {
     match state.collapse() {
@@ -181,9 +188,11 @@ where
   print_state(state);
 }
 
-fn print_state<T: TypeAtlas<DIM>, const DIM: usize>(state: State<T, DIM>)
+fn print_state<A, C, T: TypeAtlas<DIM>, const DIM: usize>(state: State<A, C, T, DIM>)
 where
   T::Variant: Display,
+  A: Arbiter<T, DIM>,
+  C: Constraint<T::Socket>,
 {
   let data: Vec<_> = state.into();
 
