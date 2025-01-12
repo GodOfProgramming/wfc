@@ -6,12 +6,10 @@ use std::{
   marker::PhantomData,
 };
 
-pub type DefaultConstrainer = UnaryConstrainer;
-
 #[derive(Default, Debug, Clone, Copy)]
-pub struct UnaryConstrainer;
+pub struct UnaryConstraint;
 
-impl<S> Constraint<S> for UnaryConstrainer
+impl<S> Constraint<S> for UnaryConstraint
 where
   S: Eq + Hash,
 {
@@ -22,9 +20,9 @@ where
 }
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct SetConstrainer;
+pub struct SetConstraint;
 
-impl<S> Constraint<BTreeSet<S>> for SetConstrainer
+impl<S> Constraint<BTreeSet<S>> for SetConstraint
 where
   S: Ord,
 {
@@ -37,7 +35,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct SequentialConstrainer<C1, C2, S>
+pub struct SequentialConstraints<C1, C2, S>
 where
   C1: Constraint<S>,
   C2: Constraint<S>,
@@ -48,7 +46,7 @@ where
   _pd: PhantomData<S>,
 }
 
-impl<C1, C2, S> Constraint<S> for SequentialConstrainer<C1, C2, S>
+impl<C1, C2, S> Constraint<S> for SequentialConstraints<C1, C2, S>
 where
   C1: Constraint<S>,
   C2: Constraint<S>,

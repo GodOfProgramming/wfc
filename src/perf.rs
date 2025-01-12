@@ -27,10 +27,7 @@ pub fn enable_profiling() -> Vec<Box<dyn Any>> {
     use tracing_chrome::ChromeLayerBuilder;
     use tracing_subscriber::layer::SubscriberExt;
 
-    let output_file = format!(
-      "target/trace-{variant}.json",
-      variant = Local::now().to_string()
-    );
+    let output_file = format!("target/trace-{variant}.json", variant = Local::now());
 
     println!("Saving results to {output_file}");
 

@@ -44,10 +44,9 @@ where
   {
     self
       .provider
-      .find(current, dir.clone(), variant, neighbor_variant)
-      .map_err(|e| {
+      .find(current, dir, variant, neighbor_variant)
+      .inspect_err(|_| {
         failures.push((dir, variant.clone(), neighbor_variant.clone()));
-        e
       })
   }
 }
@@ -67,7 +66,7 @@ where
     for (i, source) in self.source.iter().enumerate() {
       let pos = IPos::from_index(i, self.size);
       let entry = rules.entry(source.clone());
-      let rule = entry.or_insert_with(|| Rule::default());
+      let rule = entry.or_insert_with(Rule::default);
 
       for dir in D::iter() {
         let neighbor = pos + dir;

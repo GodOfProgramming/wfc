@@ -24,11 +24,11 @@ pub struct MazeRuleProvider<T: Maze2dTechnique> {
   rules: HashMap<(Dim2d, T::Variant), Socket>,
 }
 
-impl<T> MazeRuleProvider<T>
+impl<T> Default for MazeRuleProvider<T>
 where
   T: Maze2dTechnique,
 {
-  pub fn new() -> Self {
+  fn default() -> Self {
     Self {
       rules: hashmap! {
         (Dim2d::Up, T::ENTRANCE) => Socket::Vertical,
@@ -134,7 +134,7 @@ where
       .get(&(dir, source.clone()))
       .cloned()
       .ok_or(NoSocket)
-      .map(|socket| Some(socket))
+      .map(Some)
   }
 
   fn finalize(&self, _dir: Dim2d, socket: Self::WorkingType) -> Socket {
@@ -151,7 +151,7 @@ mod tests {
     prebuilt::{
       arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
       auto::GenericFinder,
-      constraints::{DefaultConstrainer, UnaryConstrainer},
+      constraints::UnaryConstraint,
       shapes::{InformedShape, MultiShape, WeightedShape},
       Dim2d,
     },
@@ -224,10 +224,17 @@ mod tests {
     type Variant = char;
     type Dimension = Dim2d;
     type Socket = Option<Socket>;
-    type Constraint = DefaultConstrainer;
-    type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = usize;
-    type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
+    type Constraint = UnaryConstraint;
+    type Arbiter = MultiPhaseArbitration<
+      WeightArbiter<
+        MultiShape<WeightedShape<usize, Self, 2>, InformedShape<usize, Self, 2>, Self, 2>,
+        Self,
+        2,
+      >,
+      LimitAdjuster<Self, 2>,
+      Self,
+      2,
+    >;
   }
 
   #[test]
@@ -249,11 +256,15 @@ mod tests {
     assert_eq!(source.len(), rows * cols);
     assert_eq!(EXPECTED_OUTPUT.chars().count(), ROWS * COLS);
 
-    let finder = GenericFinder::new(MazeRuleProvider::<TextMaze>::new(), source, [cols, rows]);
+    let finder = GenericFinder::new(
+      MazeRuleProvider::<TextMaze>::default(),
+      source,
+      [cols, rows],
+    );
 
     let rules = finder.find().unwrap();
 
-    let weights = rules.keys().map(|k| (k.clone(), 1)).collect();
+    let weights: HashMap<char, usize> = rules.keys().map(|k| (*k, 1)).collect();
 
     let shape = MultiShape::new(
       WeightedShape::new(weights),
@@ -266,7 +277,7 @@ mod tests {
         TextMaze::EXIT => 0,
       }));
 
-    let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstrainer);
+    let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstraint);
 
     builder
       .with_rules(rules)

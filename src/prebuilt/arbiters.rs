@@ -14,10 +14,7 @@ pub struct RandomArbiter<T: TypeAtlas<DIM>, const DIM: usize> {
   _pd: PhantomData<T>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Default for RandomArbiter<T, DIM>
-where
-  T::Shape: Default,
-{
+impl<T: TypeAtlas<DIM>, const DIM: usize> Default for RandomArbiter<T, DIM> {
   fn default() -> Self {
     let seed = thread_rng().gen();
     let rng = ChaCha20Rng::seed_from_u64(seed);
@@ -30,10 +27,7 @@ where
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for RandomArbiter<T, DIM>
-where
-  T::Shape: Clone,
-{
+impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for RandomArbiter<T, DIM> {
   fn clone(&self) -> Self {
     Self {
       seed: self.seed,
@@ -102,16 +96,16 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for RandomArbiter<T, 
 }
 
 #[derive(Debug)]
-pub struct WeightArbiter<T: TypeAtlas<DIM>, const DIM: usize> {
+pub struct WeightArbiter<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> {
   seed: u64,
   rng: ChaCha20Rng,
-  shape: T::Shape,
+  shape: S,
   _pd: PhantomData<T>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Default for WeightArbiter<T, DIM>
+impl<S, T: TypeAtlas<DIM>, const DIM: usize> Default for WeightArbiter<S, T, DIM>
 where
-  T::Shape: Default,
+  S: Shape<T, DIM> + Default,
 {
   fn default() -> Self {
     let seed = thread_rng().gen();
@@ -120,15 +114,15 @@ where
     Self {
       seed,
       rng,
-      shape: T::Shape::default(),
+      shape: S::default(),
       _pd: PhantomData,
     }
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for WeightArbiter<T, DIM>
+impl<S, T: TypeAtlas<DIM>, const DIM: usize> Clone for WeightArbiter<S, T, DIM>
 where
-  T::Shape: Clone,
+  S: Shape<T, DIM> + Clone,
 {
   fn clone(&self) -> Self {
     Self {
@@ -140,8 +134,8 @@ where
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> WeightArbiter<T, DIM> {
-  pub fn new(seed: Option<u64>, shape: T::Shape) -> Self {
+impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> WeightArbiter<S, T, DIM> {
+  pub fn new(seed: Option<u64>, shape: S) -> Self {
     let (rng, seed) = seed
       .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
       .unwrap_or_else(|| {
@@ -162,7 +156,9 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> WeightArbiter<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for WeightArbiter<T, DIM> {
+impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM>
+  for WeightArbiter<S, T, DIM>
+{
   #[profiling::function]
   fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM> {
     let Some(indexes) = cells.lowest_entropy_indexes() else {
@@ -190,7 +186,9 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Arbiter<T, DIM> for WeightArbiter<T, D
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM> for WeightArbiter<T, DIM> {
+impl<S: Shape<T, DIM>, T: TypeAtlas<DIM>, const DIM: usize> Adjuster<T, DIM>
+  for WeightArbiter<S, T, DIM>
+{
   type Chained<C: Adjuster<T, DIM>> = MultiPhaseArbitration<Self, C, T, DIM>;
 
   fn revise(&mut self, _variant: &T::Variant, _cells: &mut Cells<T, DIM>) {}

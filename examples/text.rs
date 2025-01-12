@@ -2,7 +2,7 @@ use maplit::hashmap;
 use prebuilt::{
   arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
   auto::GenericFinder,
-  constraints::{DefaultConstrainer, UnaryConstrainer},
+  constraints::UnaryConstraint,
   e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
   shapes::{InformedShape, MultiShape, WeightedShape},
   Dim2d,
@@ -45,10 +45,17 @@ impl TypeAtlas<2> for TextMaze {
   type Dimension = Dim2d;
   type Variant = char;
   type Socket = Option<Socket>;
-  type Constraint = DefaultConstrainer;
-  type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-  type Weight = u8;
-  type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
+  type Constraint = UnaryConstraint;
+  type Arbiter = MultiPhaseArbitration<
+    WeightArbiter<
+      MultiShape<WeightedShape<u8, Self, 2>, InformedShape<u8, Self, 2>, Self, 2>,
+      Self,
+      2,
+    >,
+    LimitAdjuster<Self, 2>,
+    Self,
+    2,
+  >;
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -71,7 +78,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   assert_eq!(source.len(), rows * cols);
 
-  let finder = GenericFinder::new(MazeRuleProvider::<TextMaze>::new(), source, [cols, rows]);
+  let finder = GenericFinder::new(
+    MazeRuleProvider::<TextMaze>::default(),
+    source,
+    [cols, rows],
+  );
 
   let rules = match finder.find() {
     Ok(rules) => rules,
@@ -85,7 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let seed: Option<u64> = args.get(1).map(|arg| arg.parse()).transpose().unwrap();
 
-  let weights = rules.keys().map(|k| (k.clone(), 1)).collect();
+  let weights = rules.keys().map(|k| (*k, 1)).collect();
 
   let shape = MultiShape::new(
     WeightedShape::new(weights),
@@ -100,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     TextMaze::EXIT => 0,
   }));
 
-  let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstrainer);
+  let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstraint);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];

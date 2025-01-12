@@ -1,59 +1,51 @@
 use crate::{
   cells::{Cell, Cells},
-  IPos, Shape, TypeAtlas,
+  IPos, Shape, TypeAtlas, Weight,
 };
 use derive_more::derive::{Deref, DerefMut};
 use derive_new::new;
 use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
-#[derive(Debug)]
-pub struct NoShape;
-
-impl<T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for NoShape {
-  fn weight(&self, _variant: &T::Variant, _index: usize, _cells: &Cells<T, DIM>) -> T::Weight {
-    T::Weight::default()
-  }
-}
-
 #[derive(Debug, new, Deref, DerefMut)]
-pub struct WeightedShape<T: TypeAtlas<DIM>, const DIM: usize>(HashMap<T::Variant, T::Weight>);
+pub struct WeightedShape<W: Weight, T: TypeAtlas<DIM>, const DIM: usize>(HashMap<T::Variant, W>);
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Default for WeightedShape<T, DIM> {
+impl<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> Default for WeightedShape<W, T, DIM> {
   fn default() -> Self {
     Self(Default::default())
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for WeightedShape<T, DIM> {
+impl<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> Clone for WeightedShape<W, T, DIM> {
   fn clone(&self) -> Self {
     Self(self.0.clone())
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for WeightedShape<T, DIM> {
-  fn weight(&self, variant: &T::Variant, _index: usize, _cells: &Cells<T, DIM>) -> T::Weight {
+impl<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for WeightedShape<W, T, DIM> {
+  type Weight = W;
+  fn weight(&self, variant: &T::Variant, _index: usize, _cells: &Cells<T, DIM>) -> Self::Weight {
     self
       .get(variant)
       .cloned()
-      .unwrap_or_else(|| T::Weight::default())
+      .unwrap_or_else(|| Self::Weight::default())
   }
 }
 
 #[derive(Debug)]
-pub struct InformedShape<T: TypeAtlas<DIM>, const DIM: usize> {
+pub struct InformedShape<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> {
   range: f64,
-  magnitude: T::Weight,
-  values: HashMap<T::Variant, T::Weight>,
+  magnitude: W,
+  values: HashMap<T::Variant, W>,
 
   estimated_neighbors: usize,
   _pd: PhantomData<T>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for InformedShape<T, DIM> {
+impl<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> Clone for InformedShape<W, T, DIM> {
   fn clone(&self) -> Self {
     Self {
       range: self.range,
-      magnitude: self.magnitude.clone(),
+      magnitude: self.magnitude,
       values: self.values.clone(),
 
       estimated_neighbors: self.estimated_neighbors,
@@ -62,8 +54,8 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for InformedShape<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> InformedShape<T, DIM> {
-  pub fn new(range: f64, magnitude: T::Weight, values: HashMap<T::Variant, T::Weight>) -> Self {
+impl<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> InformedShape<W, T, DIM> {
+  pub fn new(range: f64, magnitude: W, values: HashMap<T::Variant, W>) -> Self {
     Self {
       range,
       magnitude,
@@ -114,7 +106,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> InformedShape<T, DIM> {
     iters: &[Range<isize>; DIM],
   ) {
     if let Some(iter) = iters.get(depth) {
-      for i in iter.clone().into_iter() {
+      for i in iter.clone() {
         current_offset[depth] = i;
         self.get_all_neighbors(cells, neighbors, start, current_offset, depth + 1, iters);
       }
@@ -134,8 +126,9 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> InformedShape<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for InformedShape<T, DIM> {
-  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> T::Weight {
+impl<W: Weight, T: TypeAtlas<DIM>, const DIM: usize> Shape<T, DIM> for InformedShape<W, T, DIM> {
+  type Weight = W;
+  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> Self::Weight {
     let neighbors = self.collapsed_neighbors(cells.at(index), cells);
     neighbors
       .iter()
@@ -175,10 +168,11 @@ where
 impl<S1, S2, T, const DIM: usize> Shape<T, DIM> for MultiShape<S1, S2, T, DIM>
 where
   S1: Shape<T, DIM>,
-  S2: Shape<T, DIM>,
+  S2: Shape<T, DIM, Weight = S1::Weight>,
   T: TypeAtlas<DIM>,
 {
-  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> T::Weight {
+  type Weight = S1::Weight;
+  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> Self::Weight {
     self.shape1.weight(variant, index, cells) + self.shape2.weight(variant, index, cells)
   }
 }

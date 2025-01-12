@@ -85,7 +85,6 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for StateBuilder<T, DIM>
 where
   T::Arbiter: Clone,
   T::Constraint: Clone,
-  T::Shape: Clone,
 {
   fn clone(&self) -> Self {
     Self {
@@ -211,7 +210,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
           &self.constraint,
           &cell.possibilities,
           &direction,
-          &mut self.rules,
+          &self.rules,
           &mut self.socket_cache,
         )?;
         let new_entropy = neighbor.entropy;
@@ -241,7 +240,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
         cell
           .selected_variant()
           .cloned()
-          .unwrap_or_else(|| T::Variant::default())
+          .unwrap_or_else(T::Variant::default)
       })
       .collect()
   }
@@ -321,9 +320,9 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Into<Vec<T::Variant>> for State<T, DIM> {
-  fn into(self) -> Vec<T::Variant> {
-    self
+impl<T: TypeAtlas<DIM>, const DIM: usize> From<State<T, DIM>> for Vec<T::Variant> {
+  fn from(value: State<T, DIM>) -> Self {
+    value
       .cells
       .list
       .into_iter()
@@ -332,12 +331,15 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Into<Vec<T::Variant>> for State<T, DIM
   }
 }
 
+type InnerSocketCache<T, const DIM: usize> = HashMap<
+  BTreeSet<<T as TypeAtlas<DIM>>::Variant>,
+  HashMap<<T as TypeAtlas<DIM>>::Dimension, HashSet<<T as TypeAtlas<DIM>>::Socket>>,
+>;
+
 #[derive(Debug, Deref, DerefMut)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-struct SocketCache<T: TypeAtlas<DIM>, const DIM: usize>(
-  HashMap<BTreeSet<T::Variant>, HashMap<T::Dimension, HashSet<T::Socket>>>,
-);
+struct SocketCache<T: TypeAtlas<DIM>, const DIM: usize>(InnerSocketCache<T, DIM>);
 
 impl<T: TypeAtlas<DIM>, const DIM: usize> Default for SocketCache<T, DIM> {
   fn default() -> Self {
@@ -351,7 +353,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
     variants: &BTreeSet<T::Variant>,
     dir: &T::Dimension,
   ) -> Option<Option<&HashSet<T::Socket>>> {
-    self.get(variants).map(|dirmap| dirmap.get(&dir))
+    self.get(variants).map(|dirmap| dirmap.get(dir))
   }
 
   fn full_create(
@@ -364,8 +366,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
     dir_map.entry(*dir).or_insert_with(|| {
       variants
         .iter()
-        .map(|id| rules.get(id).and_then(|rule| rule.get(dir)))
-        .flatten()
+        .flat_map(|id| rules.get(id).and_then(|rule| rule.get(dir)))
         .cloned()
         .collect::<HashSet<T::Socket>>()
     })
@@ -381,8 +382,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
     dir_map.entry(*dir).or_insert_with(|| {
       variants
         .iter()
-        .map(|id| rules.get(id).and_then(|rule| rule.get(dir)))
-        .flatten()
+        .flat_map(|id| rules.get(id).and_then(|rule| rule.get(dir)))
         .cloned()
         .collect::<HashSet<T::Socket>>()
     })

@@ -1,6 +1,6 @@
 use crate::{auto::FindResult, ext, prelude::*, Constraint, Dimension, TypeAtlas};
 use derive_new::new;
-use prebuilt::{arbiters::WeightArbiter, shapes::InformedShape};
+use prebuilt::arbiters::WeightArbiter;
 use std::{
   collections::{BTreeSet, HashSet},
   fmt::Debug,
@@ -16,25 +16,25 @@ pub struct ChaosMode<V, D, S, const DIM: usize, const INFLUENCE: usize>(
 impl<V, D, S, const DIM: usize, const INFLUENCE: usize> TypeAtlas<DIM>
   for ChaosMode<V, D, S, DIM, INFLUENCE>
 where
-  Self: Constraint<S>,
-  V: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde,
+  Self: Constraint<V>,
+  V: Eq + Hash + Ord + Clone + Debug + ext::MaybeSerde,
   D: Dimension + ext::MaybeSerde,
-  S: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde,
+  S: crate::Shape<Self, DIM>,
 {
   type Variant = V;
   type Dimension = D;
-  type Socket = S;
+  type Socket = V;
   type Constraint = Self;
-  type Arbiter = WeightArbiter<Self, DIM>;
-  type Weight = u32;
-  type Shape = InformedShape<Self, DIM>;
+  type Arbiter = WeightArbiter<S, Self, DIM>;
 }
 
-impl<V, D, const DIM: usize, const INFLUENCE: usize> SocketProvider<V, D, BTreeSet<V>>
-  for ChaosMode<V, V, D, DIM, INFLUENCE>
+impl<V, D, S, const DIM: usize, const INFLUENCE: usize> SocketProvider<V, D, BTreeSet<V>>
+  for ChaosMode<V, D, S, DIM, INFLUENCE>
 where
-  V: Eq + Hash + Ord + Clone + Debug,
-  D: Dimension,
+  Self: Constraint<V>,
+  V: Eq + Hash + Ord + Clone + Debug + ext::MaybeSerde,
+  D: Dimension + ext::MaybeSerde,
+  S: crate::Shape<Self, DIM>,
 {
   type WorkingType = BTreeSet<V>;
 

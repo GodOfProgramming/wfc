@@ -1,5 +1,5 @@
 use maplit::hashmap;
-use prebuilt::{arbiters::WeightArbiter, constraints::SetConstrainer, shapes::NoShape};
+use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
 use std::collections::BTreeSet;
 use wfc::{prebuilt::Dim3d, prelude::*, Rule, StateBuilder};
 
@@ -10,21 +10,16 @@ impl TypeAtlas<3> for Bench {
   type Variant = usize;
   type Dimension = Dim3d;
   type Socket = BTreeSet<usize>;
-  type Arbiter = WeightArbiter<Self, 3>;
-  type Constraint = SetConstrainer;
-  type Weight = u8;
-  type Shape = NoShape;
+  type Arbiter = RandomArbiter<Self, 3>;
+  type Constraint = SetConstraint;
 }
 
 fn main() {
   #[cfg(feature = "profiling")]
   let _guards = wfc::perf::enable_profiling();
 
-  let mut builder = StateBuilder::<Bench, 3>::new(
-    [50, 50, 50],
-    WeightArbiter::new(None, NoShape),
-    SetConstrainer,
-  );
+  let mut builder =
+    StateBuilder::<Bench, 3>::new([50, 50, 50], RandomArbiter::default(), SetConstraint);
 
   builder.with_rules(hashmap! {
     0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),

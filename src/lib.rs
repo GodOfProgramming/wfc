@@ -60,9 +60,6 @@ where
 
   type Arbiter: Arbiter<Self, DIM>;
   type Constraint: Constraint<Self::Socket>;
-
-  type Weight: Weight;
-  type Shape: Shape<Self, DIM>;
 }
 
 pub type TResult<Ok, T, const DIM: usize> = Result<Ok, TError<T, DIM>>;
@@ -154,7 +151,8 @@ impl<T> Weight for T where
 }
 
 pub trait Shape<T: TypeAtlas<DIM>, const DIM: usize>: Debug {
-  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> T::Weight;
+  type Weight: Weight;
+  fn weight(&self, variant: &T::Variant, index: usize, cells: &Cells<T, DIM>) -> Self::Weight;
 }
 
 #[cfg(test)]
@@ -162,7 +160,7 @@ mod tests {
   use crate::{ext::TypeAtlasExt, prelude::*};
   use maplit::hashmap;
   use prebuilt::{
-    arbiters::WeightArbiter, constraints::UnaryConstrainer, shapes::WeightedShape, Dim2d,
+    arbiters::WeightArbiter, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
   };
 
   const SEED: u64 = 123;
@@ -192,10 +190,8 @@ mod tests {
     type Dimension = Dim2d;
     type Variant = Tiles;
     type Socket = Option<Sockets>;
-    type Arbiter = WeightArbiter<Self, 2>;
-    type Constraint = UnaryConstrainer;
-    type Weight = u8;
-    type Shape = WeightedShape<Self, 2>;
+    type Arbiter = WeightArbiter<WeightedShape<u8, Self, 2>, Self, 2>;
+    type Constraint = UnaryConstraint;
   }
 
   #[test]
@@ -229,7 +225,7 @@ mod tests {
     let mut a_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
-      UnaryConstrainer,
+      UnaryConstraint,
     );
 
     a_builder.with_rules(rules.clone());
@@ -239,7 +235,7 @@ mod tests {
     let mut b_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
-      UnaryConstrainer,
+      UnaryConstraint,
     );
 
     b_builder.with_rules(rules);

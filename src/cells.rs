@@ -9,7 +9,7 @@ use std::{
   fmt::Debug,
   ops::{Index, IndexMut},
 };
-use strum::{IntoEnumIterator, VariantArray};
+use strum::IntoEnumIterator;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -71,8 +71,6 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Cells<T, DIM> {
   }
 
   pub fn uncollapsed_indexes_along_dir(&self, dir: T::Dimension) -> Vec<usize> {
-    T::Dimension::VARIANTS[0];
-
     let mut cells = Vec::new();
 
     let index = T::Dimension::iter().position(|d| d == dir).unwrap();

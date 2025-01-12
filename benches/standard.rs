@@ -14,9 +14,8 @@ mod text {
     prebuilt::{
       arbiters::{LimitAdjuster, MultiPhaseArbitration, RandomArbiter},
       auto::GenericFinder,
-      constraints::{DefaultConstrainer, UnaryConstrainer},
+      constraints::UnaryConstraint,
       e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
-      shapes::WeightedShape,
       Dim2d,
     },
     Adjuster, RuleFinder, Rules, Size, StateBuilder, TypeAtlas,
@@ -46,10 +45,8 @@ mod text {
     type Dimension = Dim2d;
     type Variant = char;
     type Socket = Option<Socket>;
-    type Constraint = DefaultConstrainer;
+    type Constraint = UnaryConstraint;
     type Arbiter = MultiPhaseArbitration<RandomArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = u8;
-    type Shape = WeightedShape<Self, 2>;
   }
 
   fn get_rules() -> Rules<
@@ -72,7 +69,7 @@ mod text {
     .collect::<Vec<_>>();
 
     let finder = GenericFinder::new(
-      MazeRuleProvider::<TextMazeBench>::new(),
+      MazeRuleProvider::<TextMazeBench>::default(),
       source,
       [cols, rows],
     );
@@ -93,7 +90,7 @@ mod text {
 
       let size = Size::new([dims as usize, dims as usize]);
 
-      let mut builder = StateBuilder::<TextMazeBench, 2>::new(size, arbiter, UnaryConstrainer);
+      let mut builder = StateBuilder::<TextMazeBench, 2>::new(size, arbiter, UnaryConstraint);
 
       builder
         .with_rules(get_rules())
@@ -117,7 +114,7 @@ mod misc {
   use crate::SEED;
   use criterion::Criterion;
   use maplit::hashmap;
-  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstrainer, shapes::NoShape};
+  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
   use std::collections::BTreeSet;
   use wfc::{prebuilt::Dim3d, prelude::*, Rule, Size, StateBuilder};
 
@@ -129,9 +126,7 @@ mod misc {
     type Dimension = Dim3d;
     type Socket = BTreeSet<usize>;
     type Arbiter = RandomArbiter<Self, 3>;
-    type Constraint = SetConstrainer;
-    type Weight = u8;
-    type Shape = NoShape;
+    type Constraint = SetConstraint;
   }
 
   pub fn bench(c: &mut Criterion) {
@@ -143,7 +138,7 @@ mod misc {
 
   fn execute(size: impl Into<Size<3>>) {
     let mut builder =
-      StateBuilder::<Bench, 3>::new(size, RandomArbiter::new(Some(SEED)), SetConstrainer);
+      StateBuilder::<Bench, 3>::new(size, RandomArbiter::new(Some(SEED)), SetConstraint);
     builder.with_rules(hashmap! {
       0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),
       1 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1, 2])),

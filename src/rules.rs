@@ -13,9 +13,6 @@ where
   D: Dimension,
   S: Debug + Eq + Hash + Ord + Clone,
 {
-  #[deref]
-  #[deref_mut]
-  #[into_iterator]
   table: HashMap<V, Rule<D, S>>,
 }
 
@@ -43,25 +40,22 @@ where
   }
 }
 
-impl<'self_lt, V, D, S> Rules<V, D, S>
+impl<V, D, S> Rules<V, D, S>
 where
   V: Debug + Eq + Hash + Ord + Clone,
   D: Dimension,
   S: Debug + Eq + Hash + Ord + Clone,
 {
   pub fn new(rules: impl Into<HashMap<V, Rule<D, S>>>) -> Self {
-    let rules: HashMap<V, Rule<D, S>> = rules.into();
     Self {
-      table: rules,
-      ..Default::default()
+      table: rules.into(),
     }
   }
 
   pub fn sockets(&self) -> BTreeSet<S> {
     self
       .values()
-      .map(|rule: &Rule<D, S>| rule.sockets.values())
-      .flatten()
+      .flat_map(|rule: &Rule<D, S>| rule.sockets.values())
       .cloned()
       .collect()
   }

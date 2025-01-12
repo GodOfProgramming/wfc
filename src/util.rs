@@ -42,6 +42,10 @@ impl<const DIM: usize> Size<DIM> {
     self.0.iter().product()
   }
 
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
   pub fn contains(&self, dim: &IPos<DIM>) -> bool {
     dim
       .iter()
@@ -161,7 +165,7 @@ impl<const DIM: usize> UPos<DIM> {
     let mut parts: [usize; DIM] = std::array::from_fn(|i| {
       let rev_i = DIM - 1 - i;
       let product_of_parts = (rev_i > 0)
-        .then(|| (0..rev_i).map(|ri| size[ri] as usize).product::<usize>())
+        .then(|| (0..rev_i).map(|ri| size[ri]).product::<usize>())
         .unwrap_or(1);
       let entry = index / product_of_parts;
       index -= entry * product_of_parts;
