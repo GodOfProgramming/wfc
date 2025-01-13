@@ -17,7 +17,7 @@ use cells::Cells;
 use rand::distributions::uniform::SampleUniform;
 use std::{
   cmp::PartialOrd,
-  collections::HashSet,
+  collections::{BTreeSet, HashSet},
   fmt::Debug,
   hash::Hash,
   iter::Sum,
@@ -81,7 +81,11 @@ pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
 
 impl<T> Variant for T where T: Debug + Eq + Hash + Ord + Clone {}
 
-pub trait Socket: Debug + Eq + Hash + Ord + Clone {}
+pub trait Socket: Debug + Eq + Hash + Ord + Clone {
+  fn to_set(sockets: impl Into<BTreeSet<Self>>) -> BTreeSet<Self> {
+    sockets.into()
+  }
+}
 
 impl<T> Socket for T where T: Debug + Eq + Hash + Ord + Clone {}
 
