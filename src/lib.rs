@@ -142,7 +142,8 @@ pub trait Adjuster {
 }
 
 pub trait Constraint: Debug {
-  fn check(&self, socket: SocketId, all_connecting_sockets: &HashSet<SocketId>) -> bool;
+  type Socket: Socket;
+  fn check(&self, socket: &Self::Socket, all_connecting_sockets: &HashSet<Self::Socket>) -> bool;
 }
 
 pub trait Weight:
