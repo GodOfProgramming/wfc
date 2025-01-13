@@ -34,8 +34,8 @@ impl Dimension for Dim2d {
 pub enum Dim3d {
   Left,
   Right,
-  Up,
   Down,
+  Up,
   Forward,
   Backward,
 }
@@ -45,8 +45,8 @@ impl Dimension for Dim3d {
     match self {
       Self::Left => Self::Right,
       Self::Right => Self::Left,
-      Self::Up => Self::Down,
       Self::Down => Self::Up,
+      Self::Up => Self::Down,
       Self::Forward => Self::Backward,
       Self::Backward => Self::Forward,
     }
