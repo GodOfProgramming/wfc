@@ -40,6 +40,7 @@ pub mod prelude {
 
 pub use prelude::*;
 
+/// Collapses the state until an error occurs or is finished
 #[profiling::function]
 pub fn collapse<A, C, V, D, S, const DIM: usize>(
   state: &mut State<A, C, V, D, S, DIM>,
@@ -61,16 +62,19 @@ where
 
 pub type CellIndex = usize;
 
+/// Identifier type used when abstracting away variant types for types that don't clone cheaply
 #[derive(Deref, DerefMut, PartialEq, Eq, Clone, Copy, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct VariantId(usize);
 
+/// Identifier type used when abstracting away socket types for types that don't clone cheaply
 #[derive(Deref, DerefMut, PartialEq, Eq, Clone, Copy, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct SocketId(usize);
 
+/// Identifier type used when abstracting away dimension types for types that don't clone cheaply
 #[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
@@ -86,10 +90,12 @@ impl DimensionId {
   }
 }
 
+/// Trait that describes a valid variant of a cell
 pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
 
 impl<T> Variant for T where T: Debug + Eq + Hash + Ord + Clone {}
 
+/// Trait that describes a valid variant of a cell
 pub trait Socket: Debug + Eq + Hash + Ord + Clone {
   fn to_set(sockets: impl Into<BTreeSet<Self>>) -> BTreeSet<Self> {
     sockets.into()
@@ -98,6 +104,7 @@ pub trait Socket: Debug + Eq + Hash + Ord + Clone {
 
 impl<T> Socket for T where T: Debug + Eq + Hash + Ord + Clone {}
 
+/// Trait that describes a dimension. Typically enums.
 pub trait Dimension:
   PartialEq<Self>
   + Eq
@@ -113,8 +120,10 @@ pub trait Dimension:
   fn opposite(&self) -> Self;
 }
 
+/// The successful result of a single collapse
 #[derive(PartialEq, Eq)]
 pub enum Observation {
+  /// Contains the index of the cell that was just collapsed
   Incomplete(usize),
   Complete,
 }
@@ -132,6 +141,7 @@ impl Observation {
   }
 }
 
+/// Trait that describes a type capable of collapsing a cell
 pub trait Arbiter<V: Variant>: Adjuster<V> {
   fn designate<D: Dimension, const DIM: usize>(
     &mut self,
@@ -139,6 +149,7 @@ pub trait Arbiter<V: Variant>: Adjuster<V> {
   ) -> Result<Option<usize>, err::Error<DIM>>;
 }
 
+/// Trait that describes a type capable of mutating data after a cell collapsed
 pub trait Adjuster<V: Variant> {
   type Chained<C: Adjuster<V>>: Adjuster<V>;
 
@@ -150,10 +161,12 @@ pub trait Adjuster<V: Variant> {
     A: Adjuster<V>;
 }
 
+/// Trait that describes a type that is capable of checking if a socket is compatible with all other sockets of a neighboring cell
 pub trait Constraint<S: Socket>: Debug {
   fn check(&self, socket: &S, all_connecting_sockets: &HashSet<S>) -> bool;
 }
 
+/// Trait that describes a valid weight
 pub trait Weight:
   SampleUniform
   + Default
@@ -182,6 +195,7 @@ impl<T> Weight for T where
 {
 }
 
+/// Trait that describes a type that is capable of altering the shape of the output via weights
 pub trait Shape: Debug {
   type Variant: Variant;
   type Weight: Weight;

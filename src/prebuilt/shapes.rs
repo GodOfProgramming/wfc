@@ -6,6 +6,7 @@ use derive_more::derive::{Deref, DerefMut};
 use derive_new::new;
 use std::{collections::HashMap, ops::Range};
 
+/// A shape that changes the variant selection by applying weights
 #[derive(Debug, Deref, DerefMut)]
 pub struct WeightedShape<V: Variant, W: Weight>(HashMap<V, W>);
 
@@ -37,6 +38,7 @@ impl<V: Variant, W: Weight> Shape for WeightedShape<V, W> {
   }
 }
 
+/// A shape that changes the variant selection by using the collapsed neighbors to amplify the weights for a variant
 #[derive(Debug)]
 pub struct InformedShape<V: Variant, W: Weight> {
   range: f64,

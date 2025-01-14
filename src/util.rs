@@ -2,6 +2,7 @@ use crate::{err::ConversionError, DimensionId};
 use derive_more::derive::{Deref, DerefMut};
 use nalgebra::SVector;
 use std::{
+  borrow::Borrow,
   fmt::Debug,
   ops::{Add, Rem},
 };
@@ -94,32 +95,14 @@ impl<const DIM: usize> IPos<DIM> {
     Self(SVector::from(inner))
   }
 
-  pub fn from_index(mut index: usize, size: Size<DIM>) -> Self {
-    let mut parts: [usize; DIM] = std::array::from_fn(|i| {
-      let rev_i = DIM - 1 - i;
-      let product_of_parts = (rev_i > 0)
-        .then(|| (0..rev_i).map(|ri| size[ri]).product::<usize>())
-        .unwrap_or(1);
-      let entry = index / product_of_parts;
-      index -= entry * product_of_parts;
-      entry
-    });
-
-    parts.reverse();
-
-    Self(SVector::from(parts.map(|i| i as isize)))
+  /// Converts an index into an IPos
+  pub fn from_index(index: usize, size: Size<DIM>) -> Self {
+    let arr = from_index(index, size);
+    Self(SVector::from(arr.map(|i| i as isize)))
   }
 
   pub fn index(&self, size: Size<DIM>) -> usize {
-    self
-      .iter()
-      .enumerate()
-      .map(|(i, p)| {
-        (p * (i > 0)
-          .then(|| (0..i).map(|i| size[i]).product::<usize>() as isize)
-          .unwrap_or(1)) as usize
-      })
-      .sum()
+    to_index(self.iter().map(|i| *i as usize), size)
   }
 
   pub fn wrap(&self, size: Size<DIM>) -> Self {
@@ -161,32 +144,13 @@ impl<const DIM: usize> UPos<DIM> {
     Self(SVector::from(inner))
   }
 
-  pub fn from_index(mut index: usize, size: Size<DIM>) -> Self {
-    let mut parts: [usize; DIM] = std::array::from_fn(|i| {
-      let rev_i = DIM - 1 - i;
-      let product_of_parts = (rev_i > 0)
-        .then(|| (0..rev_i).map(|ri| size[ri]).product::<usize>())
-        .unwrap_or(1);
-      let entry = index / product_of_parts;
-      index -= entry * product_of_parts;
-      entry
-    });
-
-    parts.reverse();
-
-    Self(SVector::from(parts))
+  pub fn from_index(index: usize, size: Size<DIM>) -> Self {
+    let arr = from_index(index, size);
+    Self(SVector::from(arr))
   }
 
   pub fn index(&self, size: Size<DIM>) -> usize {
-    self
-      .iter()
-      .enumerate()
-      .map(|(i, p)| {
-        p * (i > 0)
-          .then(|| (0..i).map(|i| size[i]).product::<usize>())
-          .unwrap_or(1)
-      })
-      .sum()
+    to_index(self.iter(), size)
   }
 }
 
@@ -229,10 +193,59 @@ where
 {
   type Output = Self;
 
-  fn add(self, rhs: D) -> Self::Output {
+  /// Adds the direction to the IPos to shift it appropriately
+  /// Relies on the dimension being in order from - to + sides
+  fn add(mut self, rhs: D) -> Self::Output {
     let index = D::iter().position(|d| d == rhs).unwrap();
-    self + DimensionId(index)
+    let even = index & 1 == 0;
+    let offset = if even { -1 } else { 1 };
+    let arr_index = index / 2;
+    self[arr_index] += offset;
+    self
   }
+}
+
+/// Converts an iterator of usize's that should match the length of DIM to a single dimensional index
+pub fn to_index<const DIM: usize>(
+  iter: impl Iterator<Item = impl Borrow<usize>>,
+  size: Size<DIM>,
+) -> usize {
+  iter
+    .enumerate()
+    .map(|(i, p)| {
+      *p.borrow()
+        * (i > 0)
+          .then(|| (0..i).map(|i| size[i]).product::<usize>())
+          .unwrap_or(1)
+    })
+    .sum()
+}
+
+/// Converts an index into an position in a dimension specified by DIM
+pub fn from_index<const DIM: usize>(mut index: usize, size: Size<DIM>) -> [usize; DIM] {
+  // this is the reversed parts of the position, so in 3d it'd be z,y,x
+  let mut parts: [usize; DIM] = std::array::from_fn(|i| {
+    // this algorithm *must* iterate backwards to work, so take i from above and invert it based on the dimension
+    let rev_i = DIM - 1 - i;
+
+    // then compute the product of the dimensions from 0 to the reverse of i
+    // in 3d with rev_i == 2 this would be x & y dimensions
+    let product_of_parts = (rev_i > 0)
+      .then(|| (0..rev_i).map(|ri| size[ri]).product::<usize>())
+      .unwrap_or(1);
+
+    // divide by the above value, which is the amount of times the index fits into the dimension
+    let entry = index / product_of_parts;
+    // then subtract that away from the index, allowing the next dimension down to test the same
+    index -= entry * product_of_parts;
+
+    entry
+  });
+
+  // then reverse the output here, zyx -> xyz
+  parts.reverse();
+
+  parts
 }
 
 /// only to be used when both i and j are different

@@ -135,6 +135,7 @@ where
   D: Dimension,
   S: Socket,
 {
+  /// Creates a new instance of a State, with initial setup
   #[profiling::function]
   fn new(
     size: Size<DIM>,
@@ -144,6 +145,7 @@ where
     input: Vec<Option<V>>,
     external_cells: ExtCells<V, D, DIM>,
   ) -> Result<Self, err::Error<DIM>> {
+    // create the state
     let mut this = Self {
       cells: Cells::new(size, input, &rules),
       rules,
@@ -152,45 +154,9 @@ where
       socket_cache: Default::default(),
     };
 
-    for (dir, ext) in external_cells.sides.into_iter() {
-      let indexes = this.cells.uncollapsed_indexes_along_dir(dir);
-      for index in indexes {
-        let cell = this.cells.at_mut(index);
-        let neighbor = cell.position + dir;
-        let neighbor_index = neighbor.index_in(external_cells.size);
-        let external_variant = BTreeSet::from_iter([ext[neighbor_index].clone()]);
+    this.apply_external_information(external_cells)?;
 
-        let starting_entropy = cell.entropy;
-        Self::constrain(
-          cell,
-          &this.constraint,
-          &external_variant,
-          dir.opposite(),
-          &this.rules,
-          &mut this.socket_cache,
-        )?;
-        let new_entropy = cell.entropy;
-
-        if starting_entropy != new_entropy {
-          this.cells.set_entropy(starting_entropy, index, new_entropy);
-        }
-
-        this.propagate(index)?;
-      }
-    }
-
-    let propagations = this
-      .cells
-      .list
-      .iter()
-      .enumerate()
-      .filter_map(|(i, cell)| cell.selected_variant().cloned().map(|variant| (i, variant)))
-      .collect::<Vec<_>>();
-
-    for (i, variant) in propagations {
-      this.arbiter.revise(&variant, &mut this.cells);
-      this.propagate(i)?;
-    }
+    this.apply_predetermined_cells()?;
 
     Ok(this)
   }
@@ -210,6 +176,7 @@ where
     Ok(Observation::Incomplete(index))
   }
 
+  /// propagate the information of the supplied cell to its neighbors, and repeat until there are no more constraints made
   #[profiling::function]
   fn propagate(&mut self, cell_index: usize) -> Result<(), err::Error<DIM>> {
     let mut stack = Vec::with_capacity(D::COUNT);
@@ -332,6 +299,59 @@ where
     }
 
     cell.entropy = cell.possibilities.len();
+
+    Ok(())
+  }
+
+  /// Propagates information to cells if there is a generation on a neighboring side
+  fn apply_external_information(
+    &mut self,
+    external_cells: ExtCells<V, D, DIM>,
+  ) -> Result<(), err::Error<DIM>> {
+    for (dir, ext) in external_cells.sides.into_iter() {
+      let indexes = self.cells.uncollapsed_indexes_along_dir(dir);
+      for index in indexes {
+        let cell = self.cells.at_mut(index);
+        let neighbor = cell.position + dir;
+        let neighbor_index = neighbor.index_in(external_cells.size);
+        let external_variant = BTreeSet::from_iter([ext[neighbor_index].clone()]);
+
+        let starting_entropy = cell.entropy;
+        Self::constrain(
+          cell,
+          &self.constraint,
+          &external_variant,
+          dir.opposite(),
+          &self.rules,
+          &mut self.socket_cache,
+        )?;
+        let new_entropy = cell.entropy;
+
+        if starting_entropy != new_entropy {
+          self.cells.set_entropy(starting_entropy, index, new_entropy);
+        }
+
+        self.propagate(index)?;
+      }
+    }
+
+    Ok(())
+  }
+
+  /// For any cells that are collapsed, propagate that information
+  fn apply_predetermined_cells(&mut self) -> Result<(), err::Error<DIM>> {
+    let propagations = self
+      .cells
+      .list
+      .iter()
+      .enumerate()
+      .filter_map(|(i, cell)| cell.selected_variant().cloned().map(|variant| (i, variant)))
+      .collect::<Vec<_>>();
+
+    for (i, variant) in propagations {
+      self.arbiter.revise(&variant, &mut self.cells);
+      self.propagate(i)?;
+    }
 
     Ok(())
   }

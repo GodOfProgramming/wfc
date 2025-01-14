@@ -7,6 +7,7 @@ use rand::{
 use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, iter::Iterator, marker::PhantomData};
 
+/// Randomly selects from a set of variants for collapsing
 #[derive(Debug)]
 pub struct RandomArbiter {
   seed: u64,
@@ -93,6 +94,7 @@ impl<V: Variant> Adjuster<V> for RandomArbiter {
   }
 }
 
+/// Applies weights when selecting a variant
 #[derive(Debug)]
 pub struct WeightArbiter<S: Shape> {
   seed: u64,
@@ -195,6 +197,8 @@ impl<S: Shape> Adjuster<S::Variant> for WeightArbiter<S> {
   }
 }
 
+/// Applies limits to variant selection.
+/// Only stops the wave function from selecting any more than the amount, does not enforce that number to be reached
 #[derive(Debug, Deref, DerefMut)]
 pub struct LimitAdjuster<V: Variant>(HashMap<V, usize>);
 
@@ -245,6 +249,7 @@ impl<V: Variant> Adjuster<V> for LimitAdjuster<V> {
   }
 }
 
+/// Allows for chaining an Arbiter to a number of Adjusters for customization
 pub struct MultiPhaseArbitration<V, A, Adj>
 where
   V: Variant,

@@ -4,6 +4,7 @@ use std::{
   fmt::Debug,
 };
 
+/// Tests socket connections by directly checking if the socket is in the set
 #[derive(Default, Debug, Clone, Copy)]
 pub struct UnaryConstraint;
 
@@ -14,6 +15,8 @@ impl<S: Socket> Constraint<S> for UnaryConstraint {
   }
 }
 
+/// Accounts for sockets that have multiple inner values
+/// If the socket set intersects with any set of connecting sockets, the test passes
 #[derive(Default, Debug, Clone, Copy)]
 pub struct SetConstraint;
 

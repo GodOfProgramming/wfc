@@ -11,6 +11,7 @@ use std::{
   ops::{Index, IndexMut},
 };
 
+/// Struct representing a collection of cells in some dimensional space
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
@@ -66,39 +67,51 @@ impl<V: Variant, D: Dimension, const DIM: usize> Cells<V, D, DIM> {
     self.entropy_cache.set(starting_entropy, index, new_entropy);
   }
 
+  /// Acquires a list of uncollapsed cell indexes along a side of this group of cells
+  /// Relies on the dimension being in order of - to + axis values
   pub fn uncollapsed_indexes_along_dir(&self, dir: D) -> Vec<usize> {
-    let dir = D::iter().position(|d| d == dir).unwrap();
     let mut cells = Vec::new();
 
-    let dindex = dir / 2;
-    let even = dir & 1 == 0;
+    // First get the index of this dimension value
+    let dim_val_index = D::iter().position(|d| d == dir).unwrap();
+
+    // Then get the dimensional number (0, 1 => first dimension => 0 value)
+    let dim_num = dim_val_index / 2;
+    // Also check if it's even, rules for even/odd explained below
+    let even = dim_val_index & 1 == 0;
+
     let mut pos = UPos::<DIM>::default();
 
     if even {
       // increase along other even axis starting from this axis min size value
-      pos[dindex] = 0;
+      pos[dim_num] = 0;
     } else {
       // increase along other odd axis starting from this axis max size value
-      pos[dindex] = self.size[dindex] - 1;
+      pos[dim_num] = self.size[dim_num] - 1;
     }
 
-    self.find_cells(1, dindex, &mut pos, &mut cells);
+    // Now acquire all cells along the neighboring axis
+    self.find_cells(1, dim_num, &mut pos, &mut cells);
 
     cells
   }
 
+  /// Collapse the cell at the specified index
   #[profiling::function]
   pub fn collapse<'v, F>(&mut self, index: usize, collapse_fn: F) -> Result<(), err::Error<DIM>>
   where
     F: FnOnce(&Self, &BTreeSet<V>) -> Result<V, err::Error<DIM>>,
   {
-    let cell = &self.at(index);
+    let cell = &self.list[index];
 
+    // run the collapse function which returns the variant that should be used on this cell
     let variant = collapse_fn(self, &cell.possibilities)?;
 
     let cell = &mut self.list[index];
 
+    // this cell will be collapsed, so clear its entropy from the cache
     self.entropy_cache.clear_entry(cell.entropy, index);
+    // and collapse it to the selected variant
     cell.collapse(variant);
 
     Ok(())
@@ -107,10 +120,11 @@ impl<V: Variant, D: Dimension, const DIM: usize> Cells<V, D, DIM> {
     self.entropy_cache.lowest()
   }
 
+  /// recursively finds cells along a side of this collection of cells
   fn find_cells(
     &self,
     dimension: usize,
-    dindex: usize,
+    dim_num: usize,
     pos: &mut UPos<DIM>,
     cells: &mut Vec<usize>,
   ) {
@@ -120,10 +134,10 @@ impl<V: Variant, D: Dimension, const DIM: usize> Cells<V, D, DIM> {
       cells.push(pos.index(self.size));
     }
     if dimension < DIM {
-      let d = util::wrap(dindex + dimension, DIM);
+      let d = util::wrap(dim_num + dimension, DIM);
       for i in 1..self.size[d] {
         pos[d] = i;
-        self.find_cells(dimension + 1, dindex, pos, cells);
+        self.find_cells(dimension + 1, dim_num, pos, cells);
       }
     }
   }
