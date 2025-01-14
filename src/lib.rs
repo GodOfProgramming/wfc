@@ -76,6 +76,7 @@ pub struct SocketId(usize);
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct DimensionId(usize);
 impl DimensionId {
+  #[allow(unused)]
   fn opposite(self) -> Self {
     if *self & 1 == 0 {
       Self(*self + 1)
@@ -222,14 +223,14 @@ mod tests {
 
   #[test]
   fn same_seed_produces_same_gen() {
-    let rules = RuleBuilder::default()
+    let rules: Rules<Tiles, Dim2d, Option<Sockets>> = RuleBuilder::default()
       .with_rule(
         Tiles::TileA,
         hashmap! {
           Dim2d::Up    => Some(Sockets::Any),
-          Dim2d::Down  =>Some(Sockets::Any),
-          Dim2d::Left  =>Some(Sockets::Any),
-          Dim2d::Right =>Some(Sockets::Any),
+          Dim2d::Down  => Some(Sockets::Any),
+          Dim2d::Left  => Some(Sockets::Any),
+          Dim2d::Right => Some(Sockets::Any),
         },
       )
       .with_rule(
@@ -260,7 +261,7 @@ mod tests {
     let a_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
-      UnaryConstraint::default(),
+      UnaryConstraint,
       rules.clone(),
     );
 
@@ -269,7 +270,7 @@ mod tests {
     let b_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
-      UnaryConstraint::default(),
+      UnaryConstraint,
       rules,
     );
 

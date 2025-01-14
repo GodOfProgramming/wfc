@@ -251,22 +251,22 @@ mod tests {
 
     let rules = finder.find().unwrap();
 
-    let weights = rules.variants().map(|k| (*k, 1));
+    let weights = rules
+      .variants()
+      .map(|k| (*k, 1))
+      .collect::<HashMap<char, usize>>();
 
     let shape = MultiShape::new(
-      WeightedShape::<usize>::new(weights, &rules),
+      WeightedShape::new(weights),
       InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
     );
 
-    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(
-      hashmap! {
-        TextMaze::ENTRANCE => 0,
-        TextMaze::EXIT => 0,
-      },
-      &rules,
-    ));
+    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
+      TextMaze::ENTRANCE => 0,
+      TextMaze::EXIT => 0,
+    }));
 
-    let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint::default(), rules);
+    let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
     builder
       .insert([0, 0], TextMaze::ENTRANCE)

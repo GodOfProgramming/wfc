@@ -31,7 +31,7 @@ impl<V: Variant, W: Weight> Shape for WeightedShape<V, W> {
     _cells: &Cells<Self::Variant, D, DIM>,
   ) -> Self::Weight {
     self
-      .get(&variant)
+      .get(variant)
       .cloned()
       .unwrap_or_else(|| Self::Weight::default())
   }

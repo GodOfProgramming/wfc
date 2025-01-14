@@ -79,23 +79,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   let seed: Option<u64> = args.get(1).map(|arg| arg.parse()).transpose().unwrap();
 
-  let weights = rules.variants().map(|k| (*k, 1));
+  let weights = rules
+    .variants()
+    .map(|k| (*k, 1))
+    .collect::<HashMap<char, usize>>();
 
   let shape = MultiShape::new(
-    WeightedShape::new(weights, &rules),
+    WeightedShape::new(weights),
     InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
   );
 
   let arbiter = WeightArbiter::new(seed, shape);
   println!("Seed: {}", arbiter.seed());
 
-  let arbiter = arbiter.chain(LimitAdjuster::new(
-    hashmap! {
-      TextMaze::ENTRANCE => 0,
-      TextMaze::EXIT => 0,
-    },
-    &rules,
-  ));
+  let arbiter = arbiter.chain(LimitAdjuster::new(hashmap! {
+    TextMaze::ENTRANCE => 0,
+    TextMaze::EXIT => 0,
+  }));
 
   let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
@@ -122,8 +122,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn all_at_once<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
-  A: Arbiter,
-  C: Constraint<Socket = S>,
+  A: Arbiter<V>,
+  C: Constraint<S>,
   V: Variant + Display,
   D: Dimension,
   S: Socket,
@@ -138,8 +138,8 @@ where
 
 fn step_by_step<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
-  A: Arbiter,
-  C: Constraint<Socket = S>,
+  A: Arbiter<V>,
+  C: Constraint<S>,
   V: Variant + Display + Default,
   D: Dimension,
   S: Socket,
@@ -176,8 +176,8 @@ where
 
 fn print_state<A, C, V, D, S, const DIM: usize>(state: State<A, C, V, D, S, DIM>)
 where
-  A: Arbiter,
-  C: Constraint<Socket = S>,
+  A: Arbiter<V>,
+  C: Constraint<S>,
   V: Variant + Display,
   D: Dimension,
   S: Socket,

@@ -215,7 +215,7 @@ impl<V: Variant> Adjuster<V> for LimitAdjuster<V> {
 
   #[profiling::function]
   fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>) {
-    let Some(limit) = self.get_mut(&variant) else {
+    let Some(limit) = self.get_mut(variant) else {
       return;
     };
 

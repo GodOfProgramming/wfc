@@ -73,13 +73,10 @@ mod text {
     for pow in 4_u32..8_u32 {
       let dims = 2_u32.pow(pow);
 
-      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(
-        hashmap! {
-          TextMazeBench::ENTRANCE => 0,
-          TextMazeBench::EXIT => 0,
-        },
-        &rules,
-      ));
+      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(hashmap! {
+        TextMazeBench::ENTRANCE => 0,
+        TextMazeBench::EXIT => 0,
+      }));
 
       let size = Size::new([dims as usize, dims as usize]);
 
@@ -97,8 +94,8 @@ mod text {
 
   fn execute<A, C>(builder: StateBuilder<A, C, char, Dim2d, Option<Socket>, 2>)
   where
-    A: Arbiter,
-    C: Constraint<Socket = Option<Socket>>,
+    A: Arbiter<char>,
+    C: Constraint<Option<Socket>>,
   {
     let mut state = builder.build().expect("Failed to build state");
 
