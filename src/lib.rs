@@ -251,7 +251,7 @@ mod tests {
     let a_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone(), &rules)),
-      UnaryConstraint,
+      UnaryConstraint::default(),
       rules.clone(),
     );
 
@@ -260,7 +260,7 @@ mod tests {
     let b_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights, &rules)),
-      UnaryConstraint,
+      UnaryConstraint::default(),
       rules,
     );
 

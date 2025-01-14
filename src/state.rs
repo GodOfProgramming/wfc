@@ -378,9 +378,9 @@ type InnerSocketCache<S> = HashMap<BTreeSet<VariantId>, HashMap<DimensionId, Has
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-struct SocketCache<S>(InnerSocketCache<S>);
+struct SocketCache<S: Socket>(InnerSocketCache<S>);
 
-impl<S> Default for SocketCache<S> {
+impl<S: Socket> Default for SocketCache<S> {
   fn default() -> Self {
     Self(Default::default())
   }

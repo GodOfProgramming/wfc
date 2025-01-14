@@ -13,7 +13,7 @@ impl<S: Socket> Constraint for UnaryConstraint<S> {
 
   #[profiling::function]
   fn check(&self, socket: &Self::Socket, sockets: &HashSet<Self::Socket>) -> bool {
-    sockets.contains(&socket)
+    sockets.contains(socket)
   }
 }
 
@@ -39,6 +39,6 @@ impl<S: Socket> Constraint for SetConstraint<S> {
   fn check(&self, socket: &Self::Socket, all_connecting_sockets: &HashSet<Self::Socket>) -> bool {
     all_connecting_sockets
       .iter()
-      .any(|connecting_sockets| !connecting_sockets.is_disjoint(&socket))
+      .any(|connecting_sockets| !connecting_sockets.is_disjoint(socket))
   }
 }

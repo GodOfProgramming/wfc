@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     &rules,
   ));
 
-  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
+  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint::default(), rules);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn all_at_once<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant + Display,
   D: Dimension,
   S: Socket,
@@ -139,7 +139,7 @@ where
 fn step_by_step<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant + Display + Default,
   D: Dimension,
   S: Socket,
@@ -177,7 +177,7 @@ where
 fn print_state<A, C, V, D, S, const DIM: usize>(state: State<A, C, V, D, S, DIM>)
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant + Display,
   D: Dimension,
   S: Socket,

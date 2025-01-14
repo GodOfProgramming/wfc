@@ -266,7 +266,7 @@ mod tests {
       &rules,
     ));
 
-    let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
+    let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint::default(), rules);
 
     builder
       .insert([0, 0], TextMaze::ENTRANCE)
