@@ -45,7 +45,7 @@ pub fn collapse<A, C, V, D, S, const DIM: usize>(
   state: &mut State<A, C, V, D, S, DIM>,
 ) -> Result<(), err::Error<DIM>>
 where
-  A: Arbiter,
+  A: Arbiter<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -61,7 +61,30 @@ where
 
 pub type CellIndex = usize;
 
-pub type VariantId = usize;
+#[derive(Deref, DerefMut, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct VariantId(usize);
+
+#[derive(Deref, DerefMut, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct SocketId(usize);
+
+#[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct DimensionId(usize);
+impl DimensionId {
+  fn opposite(self) -> Self {
+    if *self & 1 == 0 {
+      Self(*self + 1)
+    } else {
+      Self(*self - 1)
+    }
+  }
+}
+
 pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
 
 impl<T> Variant for T where T: Debug + Eq + Hash + Ord + Clone {}
@@ -89,20 +112,6 @@ pub trait Dimension:
   fn opposite(&self) -> Self;
 }
 
-#[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct DimensionId(usize);
-impl DimensionId {
-  fn opposite(self) -> Self {
-    if *self & 1 == 0 {
-      Self(*self + 1)
-    } else {
-      Self(*self - 1)
-    }
-  }
-}
-
 #[derive(PartialEq, Eq)]
 pub enum Observation {
   Incomplete(usize),
@@ -122,22 +131,22 @@ impl Observation {
   }
 }
 
-pub trait Arbiter: Adjuster {
-  fn designate<const DIM: usize>(
+pub trait Arbiter<V: Variant>: Adjuster<V> {
+  fn designate<D: Dimension, const DIM: usize>(
     &mut self,
-    cells: &mut Cells<DIM>,
+    cells: &mut Cells<V, D, DIM>,
   ) -> Result<Option<usize>, err::Error<DIM>>;
 }
 
-pub trait Adjuster {
-  type Chained<C: Adjuster>: Adjuster;
+pub trait Adjuster<V: Variant> {
+  type Chained<C: Adjuster<V>>: Adjuster<V>;
 
   /// Perform any mutations to the Cells upon a variant being selected
-  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>);
+  fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>);
 
   fn chain<A>(self, other: A) -> Self::Chained<A>
   where
-    A: Adjuster;
+    A: Adjuster<V>;
 }
 
 pub trait Constraint<S: Socket>: Debug {
@@ -173,12 +182,13 @@ impl<T> Weight for T where
 }
 
 pub trait Shape: Debug {
+  type Variant: Variant;
   type Weight: Weight;
-  fn weight<const DIM: usize>(
+  fn weight<D: Dimension, const DIM: usize>(
     &self,
-    variant: VariantId,
+    variant: &Self::Variant,
     index: CellIndex,
-    cells: &Cells<DIM>,
+    cells: &Cells<Self::Variant, D, DIM>,
   ) -> Self::Weight;
 }
 
@@ -249,7 +259,7 @@ mod tests {
 
     let a_builder = StateBuilder::new(
       [5, 5],
-      WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone(), &rules)),
+      WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
       UnaryConstraint::default(),
       rules.clone(),
     );
@@ -258,7 +268,7 @@ mod tests {
 
     let b_builder = StateBuilder::new(
       [5, 5],
-      WeightArbiter::new(Some(SEED), WeightedShape::new(weights, &rules)),
+      WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
       UnaryConstraint::default(),
       rules,
     );

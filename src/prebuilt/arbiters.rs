@@ -1,14 +1,11 @@
-use crate::{
-  cells::Cells, err, Adjuster, Arbiter, CellIndex, Dimension, Error, Rules, Shape, Socket, Variant,
-  VariantId,
-};
+use crate::{cells::Cells, err, Adjuster, Arbiter, CellIndex, Dimension, Error, Shape, Variant};
 use derive_more::derive::{Deref, DerefMut};
 use rand::{
   seq::{IteratorRandom, SliceRandom},
   thread_rng, Rng, SeedableRng,
 };
 use rand_chacha::ChaCha20Rng;
-use std::{borrow::Borrow, collections::HashMap, iter::Iterator};
+use std::{collections::HashMap, iter::Iterator, marker::PhantomData};
 
 #[derive(Debug)]
 pub struct RandomArbiter {
@@ -51,11 +48,11 @@ impl RandomArbiter {
   }
 }
 
-impl Arbiter for RandomArbiter {
+impl<V: Variant> Arbiter<V> for RandomArbiter {
   #[profiling::function]
-  fn designate<const DIM: usize>(
+  fn designate<D: Dimension, const DIM: usize>(
     &mut self,
-    cells: &mut Cells<DIM>,
+    cells: &mut Cells<V, D, DIM>,
   ) -> Result<Option<CellIndex>, err::Error<DIM>> {
     let Some(indexes) = cells.lowest_entropy_indexes() else {
       return Ok(None);
@@ -78,14 +75,19 @@ impl Arbiter for RandomArbiter {
   }
 }
 
-impl Adjuster for RandomArbiter {
-  type Chained<C: Adjuster> = MultiPhaseArbitration<Self, C>;
+impl<V: Variant> Adjuster<V> for RandomArbiter {
+  type Chained<C: Adjuster<V>> = MultiPhaseArbitration<V, Self, C>;
 
-  fn revise<const DIM: usize>(&mut self, _variant: VariantId, _cells: &mut Cells<DIM>) {}
+  fn revise<D: Dimension, const DIM: usize>(
+    &mut self,
+    _variant: &V,
+    _cells: &mut Cells<V, D, DIM>,
+  ) {
+  }
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster,
+    C: Adjuster<V>,
   {
     MultiPhaseArbitration::new(self, other)
   }
@@ -144,11 +146,11 @@ impl<S: Shape> WeightArbiter<S> {
   }
 }
 
-impl<S: Shape> Arbiter for WeightArbiter<S> {
+impl<S: Shape> Arbiter<S::Variant> for WeightArbiter<S> {
   #[profiling::function]
-  fn designate<const DIM: usize>(
+  fn designate<D: Dimension, const DIM: usize>(
     &mut self,
-    cells: &mut Cells<DIM>,
+    cells: &mut Cells<S::Variant, D, DIM>,
   ) -> Result<Option<usize>, err::Error<DIM>> {
     let Some(indexes) = cells.lowest_entropy_indexes() else {
       return Ok(None);
@@ -164,7 +166,7 @@ impl<S: Shape> Arbiter for WeightArbiter<S> {
         .iter()
         .collect::<Vec<_>>()
         .choose_weighted(&mut self.rng, |variant| {
-          self.shape.weight(**variant, index, cells)
+          self.shape.weight(*variant, index, cells)
         })
         .cloned()
         .cloned()
@@ -175,47 +177,44 @@ impl<S: Shape> Arbiter for WeightArbiter<S> {
   }
 }
 
-impl<S: Shape> Adjuster for WeightArbiter<S> {
-  type Chained<C: Adjuster> = MultiPhaseArbitration<Self, C>;
+impl<S: Shape> Adjuster<S::Variant> for WeightArbiter<S> {
+  type Chained<C: Adjuster<S::Variant>> = MultiPhaseArbitration<S::Variant, Self, C>;
 
-  fn revise<const DIM: usize>(&mut self, _variant: VariantId, _cells: &mut Cells<DIM>) {}
+  fn revise<D: Dimension, const DIM: usize>(
+    &mut self,
+    _variant: &S::Variant,
+    _cells: &mut Cells<S::Variant, D, DIM>,
+  ) {
+  }
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster,
+    C: Adjuster<S::Variant>,
   {
     MultiPhaseArbitration::new(self, other)
   }
 }
 
 #[derive(Debug, Deref, DerefMut)]
-pub struct LimitAdjuster(HashMap<VariantId, usize>);
+pub struct LimitAdjuster<V: Variant>(HashMap<V, usize>);
 
-impl Clone for LimitAdjuster {
+impl<V: Variant> Clone for LimitAdjuster<V> {
   fn clone(&self) -> Self {
     Self(self.0.clone())
   }
 }
 
-impl LimitAdjuster {
-  pub fn new<V: Variant, D: Dimension, S: Socket>(
-    limits: impl IntoIterator<Item = (V, usize)>,
-    rules: impl Borrow<Rules<V, D, S>>,
-  ) -> Self {
-    Self(
-      limits
-        .into_iter()
-        .map(|(v, count)| (rules.borrow().legend().variant_id(&v), count))
-        .collect(),
-    )
+impl<V: Variant> LimitAdjuster<V> {
+  pub fn new(limits: impl Into<HashMap<V, usize>>) -> Self {
+    Self(limits.into())
   }
 }
 
-impl Adjuster for LimitAdjuster {
-  type Chained<C: Adjuster> = (Self, C);
+impl<V: Variant> Adjuster<V> for LimitAdjuster<V> {
+  type Chained<C: Adjuster<V>> = (Self, C);
 
   #[profiling::function]
-  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>) {
+  fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>) {
     let Some(limit) = self.get_mut(&variant) else {
       return;
     };
@@ -240,91 +239,103 @@ impl Adjuster for LimitAdjuster {
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster,
+    C: Adjuster<V>,
   {
     (self, other)
   }
 }
 
-pub struct MultiPhaseArbitration<A, Adj>
+pub struct MultiPhaseArbitration<V, A, Adj>
 where
-  A: Arbiter,
-  Adj: Adjuster,
+  V: Variant,
+  A: Arbiter<V>,
+  Adj: Adjuster<V>,
 {
   arbiter: A,
   adjuster: Adj,
+  _pd: PhantomData<V>,
 }
 
-impl<A, Adj> Clone for MultiPhaseArbitration<A, Adj>
+impl<V, A, Adj> Clone for MultiPhaseArbitration<V, A, Adj>
 where
-  A: Arbiter + Clone,
-  Adj: Adjuster + Clone,
+  V: Variant,
+  A: Arbiter<V> + Clone,
+  Adj: Adjuster<V> + Clone,
 {
   fn clone(&self) -> Self {
     Self {
       arbiter: self.arbiter.clone(),
       adjuster: self.adjuster.clone(),
+      _pd: PhantomData,
     }
   }
 }
 
-impl<A, Adj> MultiPhaseArbitration<A, Adj>
+impl<V, A, Adj> MultiPhaseArbitration<V, A, Adj>
 where
-  A: Arbiter,
-  Adj: Adjuster,
+  V: Variant,
+  A: Arbiter<V>,
+  Adj: Adjuster<V>,
 {
   pub fn new(arbiter: A, adjuster: Adj) -> Self {
-    Self { arbiter, adjuster }
+    Self {
+      arbiter,
+      adjuster,
+      _pd: PhantomData,
+    }
   }
 }
 
-impl<A, Adj> Arbiter for MultiPhaseArbitration<A, Adj>
+impl<V, A, Adj> Arbiter<V> for MultiPhaseArbitration<V, A, Adj>
 where
-  A: Arbiter,
-  Adj: Adjuster,
+  V: Variant,
+  A: Arbiter<V>,
+  Adj: Adjuster<V>,
 {
-  fn designate<const DIM: usize>(
+  fn designate<D: Dimension, const DIM: usize>(
     &mut self,
-    cells: &mut Cells<DIM>,
+    cells: &mut Cells<V, D, DIM>,
   ) -> Result<Option<usize>, err::Error<DIM>> {
     self.arbiter.designate(cells)
   }
 }
 
-impl<A, Adj> Adjuster for MultiPhaseArbitration<A, Adj>
+impl<V, A, Adj> Adjuster<V> for MultiPhaseArbitration<V, A, Adj>
 where
-  A: Arbiter,
-  Adj: Adjuster,
+  V: Variant,
+  A: Arbiter<V>,
+  Adj: Adjuster<V>,
 {
-  type Chained<C: Adjuster> = MultiPhaseArbitration<A, (Adj, C)>;
+  type Chained<C: Adjuster<V>> = MultiPhaseArbitration<V, A, (Adj, C)>;
 
-  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>) {
+  fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>) {
     self.adjuster.revise(variant, cells);
   }
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster,
+    C: Adjuster<V>,
   {
     MultiPhaseArbitration::new(self.arbiter, (self.adjuster, other))
   }
 }
 
-impl<A0, A1> Adjuster for (A0, A1)
+impl<V, A0, A1> Adjuster<V> for (A0, A1)
 where
-  A0: Adjuster,
-  A1: Adjuster,
+  V: Variant,
+  A0: Adjuster<V>,
+  A1: Adjuster<V>,
 {
-  type Chained<C: Adjuster> = ((A0, A1), C);
+  type Chained<C: Adjuster<V>> = ((A0, A1), C);
 
-  fn revise<const DIM: usize>(&mut self, variant: VariantId, cells: &mut Cells<DIM>) {
+  fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>) {
     self.0.revise(variant, cells);
     self.1.revise(variant, cells);
   }
 
   fn chain<C>(self, other: C) -> Self::Chained<C>
   where
-    C: Adjuster,
+    C: Adjuster<V>,
   {
     (self, other)
   }

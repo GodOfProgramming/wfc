@@ -1,8 +1,7 @@
 use crate::{
   err,
-  rules::{AbstractRules, Legend},
   util::{self, IPos, Size},
-  CellIndex, Dimension, DimensionId, Socket, UPos, Variant, VariantId,
+  CellIndex, Dimension, Rules, Socket, UPos, Variant,
 };
 use derive_more::derive::Deref;
 use ordermap::OrderSet;
@@ -15,22 +14,17 @@ use std::{
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct Cells<const DIM: usize> {
+pub struct Cells<V: Variant, D: Dimension, const DIM: usize> {
   pub size: Size<DIM>,
-  pub list: Vec<Cell<DIM>>,
+  pub list: Vec<Cell<V, D, DIM>>,
 
   #[cfg_attr(feature = "bevy", reflect(ignore))]
   pub entropy_cache: EntropyCache,
 }
 
-impl<const DIM: usize> Cells<DIM> {
+impl<V: Variant, D: Dimension, const DIM: usize> Cells<V, D, DIM> {
   #[profiling::function]
-  pub fn new<V: Variant, D: Dimension, S: Socket>(
-    size: Size<DIM>,
-    input: Vec<Option<V>>,
-    rules: &AbstractRules<S>,
-    legend: &Legend<V, D>,
-  ) -> Self {
+  pub fn new<S: Socket>(size: Size<DIM>, input: Vec<Option<V>>, rules: &Rules<V, D, S>) -> Self {
     let all_possibilities = BTreeSet::from_iter(rules.variants().cloned());
     let mut entropy_cache = EntropyCache::new(all_possibilities.len());
     let max_entropy = entropy_cache.len();
@@ -41,13 +35,13 @@ impl<const DIM: usize> Cells<DIM> {
       .map(|(i, input)| {
         let position = IPos::from_index(i, size);
         input
-          .map(|variant| Cell::new_collapsed(position, &variant, size, legend))
+          .map(|variant| Cell::new_collapsed(position, variant, size))
           .unwrap_or_else(|| {
             entropy_cache[max_entropy].insert(i);
-            Cell::new(position, all_possibilities.clone(), size, legend)
+            Cell::new(position, all_possibilities.clone(), size)
           })
       })
-      .collect::<Vec<Cell<DIM>>>();
+      .collect();
 
     Self {
       size,
@@ -56,15 +50,15 @@ impl<const DIM: usize> Cells<DIM> {
     }
   }
 
-  pub fn at_pos(&self, pos: &IPos<DIM>) -> Option<&Cell<DIM>> {
+  pub fn at_pos(&self, pos: &IPos<DIM>) -> Option<&Cell<V, D, DIM>> {
     self.list.get(pos.index(self.size))
   }
 
-  pub fn at(&self, index: usize) -> &Cell<DIM> {
+  pub fn at(&self, index: usize) -> &Cell<V, D, DIM> {
     &self.list[index]
   }
 
-  pub fn at_mut(&mut self, index: usize) -> &mut Cell<DIM> {
+  pub fn at_mut(&mut self, index: usize) -> &mut Cell<V, D, DIM> {
     &mut self.list[index]
   }
 
@@ -72,11 +66,12 @@ impl<const DIM: usize> Cells<DIM> {
     self.entropy_cache.set(starting_entropy, index, new_entropy);
   }
 
-  pub fn uncollapsed_indexes_along_dir(&self, dir: DimensionId) -> Vec<usize> {
+  pub fn uncollapsed_indexes_along_dir(&self, dir: D) -> Vec<usize> {
+    let dir = D::iter().position(|d| d == dir).unwrap();
     let mut cells = Vec::new();
 
-    let dindex = *dir / 2;
-    let even = *dir & 1 == 0;
+    let dindex = dir / 2;
+    let even = dir & 1 == 0;
     let mut pos = UPos::<DIM>::default();
 
     if even {
@@ -95,7 +90,7 @@ impl<const DIM: usize> Cells<DIM> {
   #[profiling::function]
   pub fn collapse<'v, F>(&mut self, index: usize, collapse_fn: F) -> Result<(), err::Error<DIM>>
   where
-    F: FnOnce(&Self, &BTreeSet<VariantId>) -> Result<VariantId, err::Error<DIM>>,
+    F: FnOnce(&Self, &BTreeSet<V>) -> Result<V, err::Error<DIM>>,
   {
     let cell = &self.at(index);
 
@@ -137,59 +132,49 @@ impl<const DIM: usize> Cells<DIM> {
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct Cell<const DIM: usize> {
-  pub possibilities: BTreeSet<VariantId>,
-  pub neighbors: Vec<(CellIndex, DimensionId)>,
+pub struct Cell<V: Variant, D: Dimension, const DIM: usize> {
+  pub possibilities: BTreeSet<V>,
+  pub neighbors: Vec<(CellIndex, D)>,
   pub entropy: usize,
 
   pub position: IPos<DIM>,
 }
 
-impl<const DIM: usize> Cell<DIM> {
-  fn new<V: Variant, D: Dimension>(
-    position: IPos<DIM>,
-    possibilities: impl Into<BTreeSet<VariantId>>,
-    size: Size<DIM>,
-    legend: &Legend<V, D>,
-  ) -> Self {
+impl<V: Variant, D: Dimension, const DIM: usize> Cell<V, D, DIM> {
+  fn new(position: IPos<DIM>, possibilities: impl Into<BTreeSet<V>>, size: Size<DIM>) -> Self {
     let possibilities = possibilities.into();
     let entropy = possibilities.len();
     Self {
       possibilities,
       entropy,
-      neighbors: Self::neighbors(position, size, legend),
+      neighbors: Self::neighbors(position, size).collect(),
       position,
     }
   }
 
-  pub fn new_collapsed<V: Variant, D: Dimension>(
-    position: IPos<DIM>,
-    collapsed_variant: &V,
-    size: Size<DIM>,
-    legend: &Legend<V, D>,
-  ) -> Self {
+  pub fn new_collapsed(position: IPos<DIM>, collapsed_variant: V, size: Size<DIM>) -> Self {
     Self {
-      possibilities: BTreeSet::from_iter([legend.variant_id(collapsed_variant)]),
+      possibilities: BTreeSet::from_iter([collapsed_variant]),
       entropy: 0,
-      neighbors: Self::neighbors(position, size, legend),
+      neighbors: Self::neighbors(position, size).collect(),
       position,
     }
   }
 
-  pub fn selected_variant(&self) -> Option<VariantId> {
+  pub fn selected_variant(&self) -> Option<&V> {
     self
       .collapsed()
-      .then(|| self.possibilities.iter().next().cloned())
+      .then(|| self.possibilities.iter().next())
       .flatten()
   }
 
-  pub fn collapse(&mut self, variant: VariantId) {
+  pub fn collapse(&mut self, variant: V) {
     self.possibilities = BTreeSet::from([variant]);
     self.entropy = 0;
   }
 
-  pub fn remove_variant(&mut self, variant: VariantId) {
-    self.possibilities.remove(&variant);
+  pub fn remove_variant(&mut self, variant: &V) {
+    self.possibilities.remove(variant);
     self.entropy = self.possibilities.len();
   }
 
@@ -197,19 +182,11 @@ impl<const DIM: usize> Cell<DIM> {
     self.entropy == 0
   }
 
-  fn neighbors<V: Variant, D: Dimension>(
-    position: IPos<DIM>,
-    size: Size<DIM>,
-    legend: &Legend<V, D>,
-  ) -> Vec<(CellIndex, DimensionId)> {
-    D::iter()
-      .filter_map(|dir| {
-        let npos = position + legend.dimension_id(&dir);
-        size
-          .contains(&npos)
-          .then(|| (npos.index(size), legend.dimension_id(&dir)))
-      })
-      .collect()
+  fn neighbors(position: IPos<DIM>, size: Size<DIM>) -> impl Iterator<Item = (CellIndex, D)> {
+    D::iter().filter_map(move |dir| {
+      let npos = position + dir;
+      size.contains(&npos).then(|| (npos.index(size), dir))
+    })
   }
 }
 
