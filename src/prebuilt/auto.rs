@@ -1,10 +1,11 @@
 use self::auto::Error;
 use crate::{
   auto,
+  rules::RuleBuilder,
   util::{IPos, Size},
   Dimension, FindResult, Rule, RuleFinder, Rules, SocketProvider,
 };
-use std::{collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData};
 
 pub struct GenericFinder<V, D, S, P, const DIM: usize>
 where
@@ -44,10 +45,9 @@ where
   {
     self
       .provider
-      .find(current, dir.clone(), variant, neighbor_variant)
-      .map_err(|e| {
+      .find(current, dir, variant, neighbor_variant)
+      .inspect_err(|_| {
         failures.push((dir, variant.clone(), neighbor_variant.clone()));
-        e
       })
   }
 }
@@ -62,12 +62,12 @@ where
   #[profiling::function]
   fn find(&self) -> Result<Rules<V, D, Option<S>>, Error<V, D>> {
     let mut failures = Vec::new();
-    let mut rules = Rules::<V, D, Option<P::WorkingType>>::default();
+    let mut rule_builder = RuleBuilder::<V, D, Option<P::WorkingType>>::default();
 
     for (i, source) in self.source.iter().enumerate() {
       let pos = IPos::from_index(i, self.size);
-      let entry = rules.entry(source.clone());
-      let rule = entry.or_insert_with(|| Rule::default());
+      let entry = rule_builder.entry(source.clone());
+      let rule = entry.or_insert_with(Rule::default);
 
       for dir in D::iter() {
         let neighbor = pos + dir;
@@ -89,25 +89,26 @@ where
     }
 
     if failures.is_empty() {
-      Ok(Rules::new(
-        rules
-          .into_iter()
-          .map(|(i, rule)| {
-            (
-              i,
-              rule
-                .into_iter()
-                .map(|(dir, socket)| {
-                  (
-                    dir,
-                    socket.map(|socket| self.provider.finalize(dir, socket)),
-                  )
-                })
-                .collect(),
-            )
-          })
-          .collect::<HashMap<V, Rule<D, Option<S>>>>(),
-      ))
+      let mapped_builder = rule_builder
+        .table
+        .into_iter()
+        .map(|(variant, rule)| {
+          (
+            variant,
+            rule
+              .into_iter()
+              .map(|(dir, socket)| {
+                (
+                  dir,
+                  socket.map(|socket| self.provider.finalize(dir, socket)),
+                )
+              })
+              .collect::<Rule<D, Option<S>>>(),
+          )
+        })
+        .collect::<RuleBuilder<V, D, Option<S>>>();
+
+      Ok(mapped_builder.into())
     } else {
       Err(Error::RuleNotFound(failures))
     }

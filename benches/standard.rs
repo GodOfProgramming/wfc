@@ -10,24 +10,21 @@ mod text {
   use crate::SEED;
   use criterion::Criterion;
   use maplit::hashmap;
-  use std::collections::HashMap;
   use wfc::{
     prebuilt::{
-      arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
+      arbiters::{LimitAdjuster, RandomArbiter},
       auto::GenericFinder,
-      constraints::{DefaultConstrainer, UnaryConstrainer},
-      e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
-      shapes::WeightedShape,
-      weights::DirectWeight,
+      constraints::UnaryConstraint,
+      e2e::maze2d::{Maze2dTypeSet, MazeRuleProvider, Socket},
       Dim2d,
     },
-    Adjuster, RuleFinder, Rules, Size, StateBuilder, TypeAtlas,
+    Adjuster, Arbiter, Constraint, RuleFinder, Rules, Size, StateBuilder,
   };
 
   #[derive(Debug)]
   struct TextMazeBench;
 
-  impl Maze2dTechnique for TextMazeBench {
+  impl Maze2dTypeSet<char> for TextMazeBench {
     const ENTRANCE: char = 'E';
     const EXIT: char = 'X';
     const EMPTY: char = ' ';
@@ -44,21 +41,7 @@ mod text {
     const THREE_WAY_LEFT: char = '╣';
   }
 
-  impl TypeAtlas<2> for TextMazeBench {
-    type Dimension = Dim2d;
-    type Variant = char;
-    type Socket = Option<Socket>;
-    type Constraint = DefaultConstrainer;
-    type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = DirectWeight;
-    type Shape = WeightedShape<Self, 2>;
-  }
-
-  fn get_rules() -> Rules<
-    <TextMazeBench as TypeAtlas<2>>::Variant,
-    <TextMazeBench as TypeAtlas<2>>::Dimension,
-    <TextMazeBench as TypeAtlas<2>>::Socket,
-  > {
+  fn get_rules() -> Rules<char, Dim2d, Option<Socket>> {
     let rows = 7;
     let cols = 10;
     let source = "\
@@ -74,7 +57,7 @@ mod text {
     .collect::<Vec<_>>();
 
     let finder = GenericFinder::new(
-      MazeRuleProvider::<TextMazeBench>::new(),
+      MazeRuleProvider::<char, TextMazeBench>::default(),
       source,
       [cols, rows],
     );
@@ -85,22 +68,21 @@ mod text {
   pub fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("text-maze");
 
+    let rules = get_rules();
+
     for pow in 4_u32..8_u32 {
       let dims = 2_u32.pow(pow);
 
-      let arbiter = WeightArbiter::new(Some(SEED), WeightedShape::new(HashMap::default())).chain(
-        LimitAdjuster::new(hashmap! {
-          TextMazeBench::ENTRANCE => 0,
-          TextMazeBench::EXIT => 0,
-        }),
-      );
+      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(hashmap! {
+        TextMazeBench::ENTRANCE => 0,
+        TextMazeBench::EXIT => 0,
+      }));
 
       let size = Size::new([dims as usize, dims as usize]);
 
-      let mut builder = StateBuilder::<TextMazeBench, 2>::new(size, arbiter, UnaryConstrainer);
+      let mut builder = StateBuilder::new(size, arbiter, UnaryConstraint, rules.clone());
 
       builder
-        .with_rules(get_rules())
         .insert([size.x - 1, size.y - 1], TextMazeBench::EXIT)
         .insert([0, 0], TextMazeBench::ENTRANCE);
 
@@ -110,7 +92,11 @@ mod text {
     }
   }
 
-  fn execute(builder: StateBuilder<TextMazeBench, 2>) {
+  fn execute<A, C>(builder: StateBuilder<A, C, char, Dim2d, Option<Socket>, 2>)
+  where
+    A: Arbiter<char>,
+    C: Constraint<Option<Socket>>,
+  {
     let mut state = builder.build().expect("Failed to build state");
 
     wfc::collapse(&mut state).expect("Failed to collapse");
@@ -120,25 +106,9 @@ mod text {
 mod misc {
   use crate::SEED;
   use criterion::Criterion;
-  use maplit::hashmap;
-  use prebuilt::{
-    arbiters::RandomArbiter, constraints::SetConstrainer, shapes::NoShape, weights::DirectWeight,
-  };
+  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
   use std::collections::BTreeSet;
-  use wfc::{prebuilt::Dim3d, prelude::*, Rule, Size, StateBuilder};
-
-  #[derive(Debug)]
-  struct Bench;
-
-  impl TypeAtlas<3> for Bench {
-    type Variant = usize;
-    type Dimension = Dim3d;
-    type Socket = BTreeSet<usize>;
-    type Arbiter = RandomArbiter<Self, 3>;
-    type Constraint = SetConstrainer;
-    type Weight = DirectWeight;
-    type Shape = NoShape;
-  }
+  use wfc::{prebuilt::Dim3d, prelude::*, Size, StateBuilder};
 
   pub fn bench(c: &mut Criterion) {
     c.benchmark_group("misc")
@@ -148,14 +118,14 @@ mod misc {
   }
 
   fn execute(size: impl Into<Size<3>>) {
-    let mut builder =
-      StateBuilder::<Bench, 3>::new(size, RandomArbiter::new(Some(SEED)), SetConstrainer);
-    builder.with_rules(hashmap! {
-      0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),
-      1 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1, 2])),
-      2 => Rule::from_fn(|_| BTreeSet::from_iter([1, 2, 3])),
-      3 => Rule::from_fn(|_| BTreeSet::from_iter([2, 3])),
-    });
+    let rules: Rules<i32, Dim3d, BTreeSet<i32>> = RuleBuilder::default()
+      .with_rule(0, |_| BTreeSet::from_iter([0, 1]))
+      .with_rule(1, |_| BTreeSet::from_iter([0, 1, 2]))
+      .with_rule(2, |_| BTreeSet::from_iter([1, 2, 3]))
+      .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
+      .into();
+
+    let builder = StateBuilder::new(size, RandomArbiter::new(Some(SEED)), SetConstraint, rules);
     let mut state = builder.build().expect("Failed to build state");
     wfc::collapse(&mut state).expect("Failed to collapse");
   }

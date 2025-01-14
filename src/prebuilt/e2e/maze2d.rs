@@ -1,34 +1,37 @@
 use crate::prebuilt::Dim2d;
-use crate::{FindResult, NoSocket, SocketProvider, TypeAtlas};
+use crate::{FindResult, NoSocket, SocketProvider, Variant};
 use maplit::hashmap;
+use std::marker::PhantomData;
 use std::{collections::HashMap, hash::Hash};
 
-pub trait Maze2dTechnique: TypeAtlas<2, Dimension = Dim2d> {
-  const ENTRANCE: Self::Variant;
-  const EXIT: Self::Variant;
-  const EMPTY: Self::Variant;
-  const VERTICAL: Self::Variant;
-  const HORIZONTAL: Self::Variant;
-  const CORNER_UL: Self::Variant;
-  const CORNER_UR: Self::Variant;
-  const CORNER_BL: Self::Variant;
-  const CORNER_BR: Self::Variant;
-  const FOUR_WAY: Self::Variant;
-  const THREE_WAY_UP: Self::Variant;
-  const THREE_WAY_DOWN: Self::Variant;
-  const THREE_WAY_RIGHT: Self::Variant;
-  const THREE_WAY_LEFT: Self::Variant;
+pub trait Maze2dTypeSet<V: Variant> {
+  const ENTRANCE: V;
+  const EXIT: V;
+  const EMPTY: V;
+  const VERTICAL: V;
+  const HORIZONTAL: V;
+  const CORNER_UL: V;
+  const CORNER_UR: V;
+  const CORNER_BL: V;
+  const CORNER_BR: V;
+  const FOUR_WAY: V;
+  const THREE_WAY_UP: V;
+  const THREE_WAY_DOWN: V;
+  const THREE_WAY_RIGHT: V;
+  const THREE_WAY_LEFT: V;
 }
 
-pub struct MazeRuleProvider<T: Maze2dTechnique> {
-  rules: HashMap<(Dim2d, T::Variant), Socket>,
+pub struct MazeRuleProvider<V: Variant, T: Maze2dTypeSet<V>> {
+  rules: HashMap<(Dim2d, V), Socket>,
+  _pd: PhantomData<T>,
 }
 
-impl<T> MazeRuleProvider<T>
+impl<V, T> Default for MazeRuleProvider<V, T>
 where
-  T: Maze2dTechnique,
+  V: Variant,
+  T: Maze2dTypeSet<V>,
 {
-  pub fn new() -> Self {
+  fn default() -> Self {
     Self {
       rules: hashmap! {
         (Dim2d::Up, T::ENTRANCE) => Socket::Vertical,
@@ -101,6 +104,7 @@ where
         (Dim2d::Left, T::THREE_WAY_LEFT) => Socket::Horizontal,
         (Dim2d::Right, T::THREE_WAY_LEFT) => Socket::HorizontalBreak,
       },
+      _pd: PhantomData,
     }
   }
 }
@@ -115,9 +119,10 @@ pub enum Socket {
   HorizontalBreak,
 }
 
-impl<T> SocketProvider<T::Variant, Dim2d, Socket> for MazeRuleProvider<T>
+impl<V, T> SocketProvider<V, Dim2d, Socket> for MazeRuleProvider<V, T>
 where
-  T: Maze2dTechnique,
+  V: Variant,
+  T: Maze2dTypeSet<V>,
 {
   type WorkingType = Socket;
 
@@ -126,15 +131,15 @@ where
     &self,
     _current: Option<Self::WorkingType>,
     dir: Dim2d,
-    source: &T::Variant,
-    _target: &T::Variant,
+    source: &V,
+    _target: &V,
   ) -> FindResult<Socket> {
     self
       .rules
       .get(&(dir, source.clone()))
       .cloned()
       .ok_or(NoSocket)
-      .map(|socket| Some(socket))
+      .map(Some)
   }
 
   fn finalize(&self, _dir: Dim2d, socket: Self::WorkingType) -> Socket {
@@ -146,17 +151,15 @@ where
 mod tests {
   use std::collections::HashMap;
 
-  use super::{Maze2dTechnique, MazeRuleProvider, Socket};
+  use super::{Maze2dTypeSet, MazeRuleProvider};
   use crate::{
     prebuilt::{
-      arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
+      arbiters::{LimitAdjuster, WeightArbiter},
       auto::GenericFinder,
-      constraints::{DefaultConstrainer, UnaryConstrainer},
+      constraints::UnaryConstraint,
       shapes::{InformedShape, MultiShape, WeightedShape},
-      weights::DirectWeight,
-      Dim2d,
     },
-    Adjuster, RuleFinder, StateBuilder, TypeAtlas,
+    Adjuster, RuleFinder, StateBuilder,
   };
   use maplit::hashmap;
 
@@ -204,7 +207,7 @@ mod tests {
   #[derive(Debug)]
   struct TextMaze;
 
-  impl Maze2dTechnique for TextMaze {
+  impl Maze2dTypeSet<char> for TextMaze {
     const ENTRANCE: char = 'E';
     const EXIT: char = 'X';
     const EMPTY: char = '.';
@@ -219,16 +222,6 @@ mod tests {
     const THREE_WAY_DOWN: char = '╦';
     const THREE_WAY_RIGHT: char = '╠';
     const THREE_WAY_LEFT: char = '╣';
-  }
-
-  impl TypeAtlas<2> for TextMaze {
-    type Variant = char;
-    type Dimension = Dim2d;
-    type Socket = Option<Socket>;
-    type Constraint = DefaultConstrainer;
-    type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-    type Weight = DirectWeight;
-    type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
   }
 
   #[test]
@@ -250,30 +243,32 @@ mod tests {
     assert_eq!(source.len(), rows * cols);
     assert_eq!(EXPECTED_OUTPUT.chars().count(), ROWS * COLS);
 
-    let finder = GenericFinder::new(MazeRuleProvider::<TextMaze>::new(), source, [cols, rows]);
+    let finder = GenericFinder::new(
+      MazeRuleProvider::<char, TextMaze>::default(),
+      source,
+      [cols, rows],
+    );
 
     let rules = finder.find().unwrap();
 
     let weights = rules
-      .keys()
-      .map(|k| (k.clone(), DirectWeight::default()))
-      .collect();
+      .variants()
+      .map(|k| (*k, 1))
+      .collect::<HashMap<char, usize>>();
 
     let shape = MultiShape::new(
       WeightedShape::new(weights),
       InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
     );
 
-    let arbiter: <TextMaze as TypeAtlas<2>>::Arbiter =
-      WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
-        TextMaze::ENTRANCE => 0,
-        TextMaze::EXIT => 0,
-      }));
+    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
+      TextMaze::ENTRANCE => 0,
+      TextMaze::EXIT => 0,
+    }));
 
-    let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstrainer);
+    let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
     builder
-      .with_rules(rules)
       .insert([0, 0], TextMaze::ENTRANCE)
       .insert([COLS - 1, ROWS - 1], TextMaze::EXIT);
 

@@ -9,13 +9,15 @@ pub(crate) mod rules;
 pub(crate) mod state;
 pub(crate) mod util;
 
+use derive_more::derive::{Deref, DerefMut};
+use derive_new::new;
 pub use strum;
 
 use cells::Cells;
 use rand::distributions::uniform::SampleUniform;
 use std::{
   cmp::PartialOrd,
-  collections::HashSet,
+  collections::{BTreeSet, HashSet},
   fmt::Debug,
   hash::Hash,
   iter::Sum,
@@ -29,19 +31,27 @@ pub mod prelude {
     collapse,
     err::Error,
     prebuilt,
-    rules::{Rule, Rules},
+    rules::{AbstractRule, AbstractRules, Legend, Rule, RuleBuilder, Rules},
     state::{State, StateBuilder},
     util::{IPos, Size, UPos},
-    Observation, TypeAtlas,
+    Observation,
   };
 }
 
 pub use prelude::*;
 
+/// Collapses the state until an error occurs or is finished
 #[profiling::function]
-pub fn collapse<T: TypeAtlas<DIM>, const DIM: usize>(
-  state: &mut State<T, DIM>,
-) -> TResult<(), T, DIM> {
+pub fn collapse<A, C, V, D, S, const DIM: usize>(
+  state: &mut State<A, C, V, D, S, DIM>,
+) -> Result<(), err::Error<DIM>>
+where
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+{
   loop {
     if state.collapse()?.complete() {
       break;
@@ -50,29 +60,51 @@ pub fn collapse<T: TypeAtlas<DIM>, const DIM: usize>(
   Ok(())
 }
 
-pub trait TypeAtlas<const DIM: usize>
-where
-  Self: Debug + Sized,
-{
-  type Variant: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
-  type Socket: Debug + Eq + Hash + Ord + Clone + ext::MaybeSerde;
-  type Dimension: Dimension + ext::MaybeSerde;
+pub type CellIndex = usize;
 
-  type Arbiter: Arbiter<Self, DIM>;
-  type Constraint: Constraint<Self::Socket>;
+/// Identifier type used when abstracting away variant types for types that don't clone cheaply
+#[derive(Deref, DerefMut, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct VariantId(usize);
 
-  type Weight: Weight;
-  type Shape: Shape<Self, DIM>;
+/// Identifier type used when abstracting away socket types for types that don't clone cheaply
+#[derive(Deref, DerefMut, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct SocketId(usize);
+
+/// Identifier type used when abstracting away dimension types for types that don't clone cheaply
+#[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct DimensionId(usize);
+impl DimensionId {
+  #[allow(unused)]
+  fn opposite(self) -> Self {
+    if *self & 1 == 0 {
+      Self(*self + 1)
+    } else {
+      Self(*self - 1)
+    }
+  }
 }
 
-pub type TResult<Ok, T, const DIM: usize> = Result<Ok, TError<T, DIM>>;
-pub type TError<T, const DIM: usize> = Error<
-  <T as TypeAtlas<DIM>>::Variant,
-  <T as TypeAtlas<DIM>>::Dimension,
-  <T as TypeAtlas<DIM>>::Socket,
-  DIM,
->;
+/// Trait that describes a valid variant of a cell
+pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
 
+impl<T> Variant for T where T: Debug + Eq + Hash + Ord + Clone {}
+
+/// Trait that describes a valid variant of a cell
+pub trait Socket: Debug + Eq + Hash + Ord + Clone {
+  fn to_set(sockets: impl Into<BTreeSet<Self>>) -> BTreeSet<Self> {
+    sockets.into()
+  }
+}
+
+impl<T> Socket for T where T: Debug + Eq + Hash + Ord + Clone {}
+
+/// Trait that describes a dimension. Typically enums.
 pub trait Dimension:
   PartialEq<Self>
   + Eq
@@ -88,8 +120,10 @@ pub trait Dimension:
   fn opposite(&self) -> Self;
 }
 
+/// The successful result of a single collapse
 #[derive(PartialEq, Eq)]
 pub enum Observation {
+  /// Contains the index of the cell that was just collapsed
   Incomplete(usize),
   Complete,
 }
@@ -107,54 +141,78 @@ impl Observation {
   }
 }
 
-pub trait Arbiter<T: TypeAtlas<DIM>, const DIM: usize>: Adjuster<T, DIM> {
-  fn designate(&mut self, cells: &mut Cells<T, DIM>) -> TResult<Option<usize>, T, DIM>;
+/// Trait that describes a type capable of collapsing a cell
+pub trait Arbiter<V: Variant>: Adjuster<V> {
+  fn designate<D: Dimension, const DIM: usize>(
+    &mut self,
+    cells: &mut Cells<V, D, DIM>,
+  ) -> Result<Option<usize>, err::Error<DIM>>;
 }
 
-pub trait Adjuster<T: TypeAtlas<DIM>, const DIM: usize> {
-  type Chained<C: Adjuster<T, DIM>>: Adjuster<T, DIM>;
+/// Trait that describes a type capable of mutating data after a cell collapsed
+pub trait Adjuster<V: Variant> {
+  type Chained<C: Adjuster<V>>: Adjuster<V>;
 
-  fn revise(&mut self, variant: &T::Variant, cells: &mut Cells<T, DIM>);
+  /// Perform any mutations to the Cells upon a variant being selected
+  fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>);
 
   fn chain<A>(self, other: A) -> Self::Chained<A>
   where
-    A: Adjuster<T, DIM>;
+    A: Adjuster<V>;
 }
 
-pub trait Constraint<S>: Debug {
-  fn check(&self, variant_socket: &S, sockets: &HashSet<S>) -> bool;
+/// Trait that describes a type that is capable of checking if a socket is compatible with all other sockets of a neighboring cell
+pub trait Constraint<S: Socket>: Debug {
+  fn check(&self, socket: &S, all_connecting_sockets: &HashSet<S>) -> bool;
 }
 
-pub trait Weight: Debug + Default + Clone {
-  type ValueType: SampleUniform
-    + for<'a> AddAssign<&'a Self::ValueType>
-    + PartialOrd<Self::ValueType>
+/// Trait that describes a valid weight
+pub trait Weight:
+  SampleUniform
+  + Default
+  + Clone
+  + Copy
+  + PartialOrd<Self>
+  + for<'a> AddAssign<&'a Self>
+  + Add<Self, Output = Self>
+  + Mul<Self, Output = Self>
+  + Sum<Self>
+  + Debug
+{
+}
+
+impl<T> Weight for T where
+  T: SampleUniform
+    + Default
     + Clone
     + Copy
-    + Default
-    + Add<Self::ValueType, Output = Self::ValueType>
-    + Mul<Self::ValueType, Output = Self::ValueType>
-    + Sum<Self::ValueType>
-    + Debug;
-  fn value(&self) -> Self::ValueType;
+    + PartialOrd<Self>
+    + for<'a> AddAssign<&'a Self>
+    + Add<Self, Output = Self>
+    + Mul<Self, Output = Self>
+    + Sum<Self>
+    + Debug
+{
 }
 
-pub trait Shape<T: TypeAtlas<DIM>, const DIM: usize>: Debug {
-  fn weight(
+/// Trait that describes a type that is capable of altering the shape of the output via weights
+pub trait Shape: Debug {
+  type Variant: Variant;
+  type Weight: Weight;
+  fn weight<D: Dimension, const DIM: usize>(
     &self,
-    variant: &T::Variant,
-    index: usize,
-    cells: &Cells<T, DIM>,
-  ) -> <T::Weight as Weight>::ValueType;
+    variant: &Self::Variant,
+    index: CellIndex,
+    cells: &Cells<Self::Variant, D, DIM>,
+  ) -> Self::Weight;
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::{ext::TypeAtlasExt, prelude::*};
+  use crate::{prelude::*, rules::RuleBuilder};
   use maplit::hashmap;
   use prebuilt::{
-    arbiters::WeightArbiter, constraints::UnaryConstrainer, shapes::WeightedShape,
-    weights::DirectWeight, Dim2d,
+    arbiters::WeightArbiter, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
   };
 
   const SEED: u64 = 123;
@@ -177,64 +235,58 @@ mod tests {
     Any,
   }
 
-  #[derive(Debug)]
-  struct TestMode;
-
-  impl super::TypeAtlas<2> for TestMode {
-    type Dimension = Dim2d;
-    type Variant = Tiles;
-    type Socket = Option<Sockets>;
-    type Arbiter = WeightArbiter<Self, 2>;
-    type Constraint = UnaryConstrainer;
-    type Weight = DirectWeight;
-    type Shape = WeightedShape<Self, 2>;
-  }
-
   #[test]
   fn same_seed_produces_same_gen() {
-    let rules = hashmap! {
-      Tiles::TileA => Rule::new(hashmap! {
-        Dim2d::Up    => Some(Sockets::Any),
-        Dim2d::Down  =>Some(Sockets::Any),
-        Dim2d::Left  =>Some(Sockets::Any),
-        Dim2d::Right =>Some(Sockets::Any),
-      }),
-      Tiles::TileB => Rule::new(hashmap!{
-        Dim2d::Up    => Some(Sockets::Any),
-        Dim2d::Down  => Some(Sockets::Any),
-        Dim2d::Left  => Some(Sockets::Any),
-        Dim2d::Right => Some(Sockets::Any),
-       }),
-      Tiles::TileC => Rule::new(hashmap! {
-        Dim2d::Up    => Some(Sockets::Any),
-        Dim2d::Down  => Some(Sockets::Any),
-        Dim2d::Left  => Some(Sockets::Any),
-        Dim2d::Right => Some(Sockets::Any),
-       }),
-    };
+    let rules: Rules<Tiles, Dim2d, Option<Sockets>> = RuleBuilder::default()
+      .with_rule(
+        Tiles::TileA,
+        hashmap! {
+          Dim2d::Up    => Some(Sockets::Any),
+          Dim2d::Down  => Some(Sockets::Any),
+          Dim2d::Left  => Some(Sockets::Any),
+          Dim2d::Right => Some(Sockets::Any),
+        },
+      )
+      .with_rule(
+        Tiles::TileB,
+        hashmap! {
+         Dim2d::Up    => Some(Sockets::Any),
+         Dim2d::Down  => Some(Sockets::Any),
+         Dim2d::Left  => Some(Sockets::Any),
+         Dim2d::Right => Some(Sockets::Any),
+        },
+      )
+      .with_rule(
+        Tiles::TileC,
+        hashmap! {
+         Dim2d::Up    => Some(Sockets::Any),
+         Dim2d::Down  => Some(Sockets::Any),
+         Dim2d::Left  => Some(Sockets::Any),
+         Dim2d::Right => Some(Sockets::Any),
+        },
+      )
+      .into();
 
     let weights = hashmap! {
-      Tiles::TileA => DirectWeight(3),
-      Tiles::TileB => DirectWeight(2),
+      Tiles::TileA => 3,
+      Tiles::TileB => 2,
     };
 
-    let mut a_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
+    let a_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
-      UnaryConstrainer,
+      UnaryConstraint,
+      rules.clone(),
     );
-
-    a_builder.with_rules(rules.clone());
 
     let mut a = a_builder.build().unwrap();
 
-    let mut b_builder = StateBuilder::<TestMode, { TestMode::DIM }>::new(
+    let b_builder = StateBuilder::new(
       [5, 5],
       WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
-      UnaryConstrainer,
+      UnaryConstraint,
+      rules,
     );
-
-    b_builder.with_rules(rules);
 
     let mut b = b_builder.build().unwrap();
 

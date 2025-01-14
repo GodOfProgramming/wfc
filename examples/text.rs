@@ -1,11 +1,10 @@
 use maplit::hashmap;
 use prebuilt::{
-  arbiters::{LimitAdjuster, MultiPhaseArbitration, WeightArbiter},
+  arbiters::{LimitAdjuster, WeightArbiter},
   auto::GenericFinder,
-  constraints::{DefaultConstrainer, UnaryConstrainer},
-  e2e::maze2d::{Maze2dTechnique, MazeRuleProvider, Socket},
+  constraints::UnaryConstraint,
+  e2e::maze2d::{Maze2dTypeSet, MazeRuleProvider},
   shapes::{InformedShape, MultiShape, WeightedShape},
-  weights::DirectWeight,
   Dim2d,
 };
 use std::{
@@ -13,7 +12,7 @@ use std::{
   error::Error,
   fmt::{Debug, Display},
 };
-use wfc::{prelude::*, Adjuster};
+use wfc::{prelude::*, Adjuster, Arbiter, Constraint, Dimension, Socket, Variant};
 
 const STEP_BY_STEP: bool = false;
 
@@ -25,7 +24,7 @@ const INFLUENCE_RADIUS: f64 = 2.0;
 #[derive(Debug)]
 struct TextMaze;
 
-impl Maze2dTechnique for TextMaze {
+impl Maze2dTypeSet<char> for TextMaze {
   const ENTRANCE: char = 'E';
   const EXIT: char = 'X';
   const EMPTY: char = '.';
@@ -40,16 +39,6 @@ impl Maze2dTechnique for TextMaze {
   const THREE_WAY_DOWN: char = '╦';
   const THREE_WAY_RIGHT: char = '╠';
   const THREE_WAY_LEFT: char = '╣';
-}
-
-impl TypeAtlas<2> for TextMaze {
-  type Dimension = Dim2d;
-  type Variant = char;
-  type Socket = Option<Socket>;
-  type Constraint = DefaultConstrainer;
-  type Arbiter = MultiPhaseArbitration<WeightArbiter<Self, 2>, LimitAdjuster<Self, 2>, Self, 2>;
-  type Weight = DirectWeight;
-  type Shape = MultiShape<WeightedShape<Self, 2>, InformedShape<Self, 2>, Self, 2>;
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -72,7 +61,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   assert_eq!(source.len(), rows * cols);
 
-  let finder = GenericFinder::new(MazeRuleProvider::<TextMaze>::new(), source, [cols, rows]);
+  let finder = GenericFinder::new(
+    MazeRuleProvider::<char, TextMaze>::default(),
+    source,
+    [cols, rows],
+  );
 
   let rules = match finder.find() {
     Ok(rules) => rules,
@@ -87,9 +80,9 @@ fn main() -> Result<(), Box<dyn Error>> {
   let seed: Option<u64> = args.get(1).map(|arg| arg.parse()).transpose().unwrap();
 
   let weights = rules
-    .keys()
-    .map(|k| (k.clone(), DirectWeight::default()))
-    .collect();
+    .variants()
+    .map(|k| (*k, 1))
+    .collect::<HashMap<char, usize>>();
 
   let shape = MultiShape::new(
     WeightedShape::new(weights),
@@ -104,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     TextMaze::EXIT => 0,
   }));
 
-  let mut builder = StateBuilder::<TextMaze, 2>::new([COLS, ROWS], arbiter, UnaryConstrainer);
+  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];
@@ -113,7 +106,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     .with_ext(Dim2d::Down, vertical)
     .with_ext(Dim2d::Left, horizontal.clone())
     .with_ext(Dim2d::Right, horizontal)
-    .with_rules(rules)
     .insert([0, 0], TextMaze::ENTRANCE)
     .insert([COLS - 1, ROWS - 1], TextMaze::EXIT);
 
@@ -128,9 +120,13 @@ fn main() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn all_at_once<T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<T, DIM>)
+fn all_at_once<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
-  T::Variant: Display,
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant + Display,
+  D: Dimension,
+  S: Socket,
 {
   if let Err(e) = wfc::collapse(&mut state) {
     eprintln!("{e}");
@@ -140,9 +136,13 @@ where
   print_state(state);
 }
 
-fn step_by_step<T: TypeAtlas<DIM>, const DIM: usize>(mut state: State<T, DIM>)
+fn step_by_step<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
 where
-  T::Variant: Default + Display,
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant + Display + Default,
+  D: Dimension,
+  S: Socket,
 {
   'c: loop {
     match state.collapse() {
@@ -174,9 +174,13 @@ where
   print_state(state);
 }
 
-fn print_state<T: TypeAtlas<DIM>, const DIM: usize>(state: State<T, DIM>)
+fn print_state<A, C, V, D, S, const DIM: usize>(state: State<A, C, V, D, S, DIM>)
 where
-  T::Variant: Display,
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant + Display,
+  D: Dimension,
+  S: Socket,
 {
   let data: Vec<_> = state.into();
 

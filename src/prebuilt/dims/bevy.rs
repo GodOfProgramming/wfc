@@ -8,19 +8,19 @@ use strum_macros::{EnumCount, EnumIter, VariantArray};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub enum Dim2d {
-  Left,
-  Right,
-  Down,
-  Up,
+  XNeg,
+  XPos,
+  YNeg,
+  YPos,
 }
 
 impl Dimension for Dim2d {
   fn opposite(&self) -> Self {
     match self {
-      Self::Left => Self::Right,
-      Self::Right => Self::Left,
-      Self::Down => Self::Up,
-      Self::Up => Self::Down,
+      Self::XNeg => Self::XPos,
+      Self::XPos => Self::XNeg,
+      Self::YNeg => Self::YPos,
+      Self::YPos => Self::YNeg,
     }
   }
 }
@@ -32,23 +32,23 @@ impl Dimension for Dim2d {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub enum Dim3d {
-  Left,
-  Right,
-  Up,
-  Down,
-  Forward,
-  Backward,
+  XNeg,
+  XPos,
+  YNeg,
+  YPos,
+  ZNeg,
+  ZPos,
 }
 
 impl Dimension for Dim3d {
   fn opposite(&self) -> Self {
     match self {
-      Self::Left => Self::Right,
-      Self::Right => Self::Left,
-      Self::Up => Self::Down,
-      Self::Down => Self::Up,
-      Self::Forward => Self::Backward,
-      Self::Backward => Self::Forward,
+      Self::XNeg => Self::XPos,
+      Self::XPos => Self::XNeg,
+      Self::YNeg => Self::YPos,
+      Self::YPos => Self::YNeg,
+      Self::ZNeg => Self::ZPos,
+      Self::ZPos => Self::ZNeg,
     }
   }
 }

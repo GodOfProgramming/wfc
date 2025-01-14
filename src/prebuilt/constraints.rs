@@ -1,62 +1,30 @@
-use crate::Constraint;
+use crate::{Constraint, Socket};
 use std::{
   collections::{BTreeSet, HashSet},
   fmt::Debug,
-  hash::Hash,
-  marker::PhantomData,
 };
 
-pub type DefaultConstrainer = UnaryConstrainer;
-
+/// Tests socket connections by directly checking if the socket is in the set
 #[derive(Default, Debug, Clone, Copy)]
-pub struct UnaryConstrainer;
+pub struct UnaryConstraint;
 
-impl<S> Constraint<S> for UnaryConstrainer
-where
-  S: Eq + Hash,
-{
+impl<S: Socket> Constraint<S> for UnaryConstraint {
   #[profiling::function]
   fn check(&self, socket: &S, sockets: &HashSet<S>) -> bool {
     sockets.contains(socket)
   }
 }
 
+/// Accounts for sockets that have multiple inner values
+/// If the socket set intersects with any set of connecting sockets, the test passes
 #[derive(Default, Debug, Clone, Copy)]
-pub struct SetConstrainer;
+pub struct SetConstraint;
 
-impl<S> Constraint<BTreeSet<S>> for SetConstrainer
-where
-  S: Ord,
-{
+impl<S: Socket> Constraint<BTreeSet<S>> for SetConstraint {
   #[profiling::function]
-  fn check(&self, possible_socket: &BTreeSet<S>, sockets: &HashSet<BTreeSet<S>>) -> bool {
-    sockets
+  fn check(&self, socket: &BTreeSet<S>, all_connecting_sockets: &HashSet<BTreeSet<S>>) -> bool {
+    all_connecting_sockets
       .iter()
-      .any(|sockets| sockets.intersection(possible_socket).next().is_some())
-  }
-}
-
-#[derive(Debug)]
-pub struct SequentialConstrainer<C1, C2, S>
-where
-  C1: Constraint<S>,
-  C2: Constraint<S>,
-  S: Debug,
-{
-  constrainer1: C1,
-  constrainer2: C2,
-  _pd: PhantomData<S>,
-}
-
-impl<C1, C2, S> Constraint<S> for SequentialConstrainer<C1, C2, S>
-where
-  C1: Constraint<S>,
-  C2: Constraint<S>,
-  S: Debug,
-{
-  #[profiling::function]
-  fn check(&self, variant_socket: &S, sockets: &HashSet<S>) -> bool {
-    self.constrainer1.check(variant_socket, sockets)
-      && self.constrainer2.check(variant_socket, sockets)
+      .any(|connecting_sockets| !connecting_sockets.is_disjoint(socket))
   }
 }

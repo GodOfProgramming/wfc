@@ -1,59 +1,66 @@
 use crate::{
   cells::{Cell, Cells},
+  err,
   util::{self, Size, UPos},
-  Adjuster, Arbiter, Constraint, Dimension, Error, Observation, Rules, TResult, TypeAtlas,
+  Arbiter, Constraint, Dimension, Error, Observation, Rules, Socket, Variant,
 };
 use derive_more::derive::{Deref, DerefMut};
 use std::{
   collections::{BTreeSet, HashMap, HashSet},
   fmt::Debug,
 };
-use strum::EnumCount;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct StateBuilder<T: TypeAtlas<DIM>, const DIM: usize> {
-  arbiter: T::Arbiter,
-  constraint: T::Constraint,
+pub struct StateBuilder<A, C, V, D, S, const DIM: usize>
+where
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+{
   size: Size<DIM>,
-  input: Vec<Option<T::Variant>>,
-  rules: Option<Rules<T::Variant, T::Dimension, T::Socket>>,
-  external_cells: ExtCells<T, DIM>,
+  arbiter: A,
+  constraint: C,
+  rules: Rules<V, D, S>,
+  output_buffer: Vec<Option<V>>,
+  external_cells: ExtCells<V, D, DIM>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> StateBuilder<T, DIM> {
+impl<A, C, V, D, S, const DIM: usize> StateBuilder<A, C, V, D, S, DIM>
+where
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+{
   pub fn new(
     size: impl Into<Size<DIM>>,
-    adjuster: impl Into<T::Arbiter>,
-    constraint: impl Into<T::Constraint>,
+    arbiter: A,
+    constraint: C,
+    rules: impl Into<Rules<V, D, S>>,
   ) -> Self {
     let size = size.into();
     Self {
-      arbiter: adjuster.into(),
-      constraint: constraint.into(),
       size,
-      input: vec![None; size.len()],
-      rules: Default::default(),
+      arbiter,
+      constraint,
+      rules: rules.into(),
+      output_buffer: vec![None; size.len()],
       external_cells: ExtCells::new(size),
     }
   }
 
-  pub fn with_rules(
-    &mut self,
-    rules: impl Into<Rules<T::Variant, T::Dimension, T::Socket>>,
-  ) -> &mut Self {
-    self.rules = Some(rules.into());
-    self
-  }
-
-  pub fn with_ext(&mut self, dir: T::Dimension, source: Vec<T::Variant>) -> &mut Self {
+  pub fn with_ext(&mut self, dir: D, source: Vec<V>) -> &mut Self {
     self.external_cells.insert(dir, source);
     self
   }
 
-  pub fn insert(&mut self, pos: impl Into<UPos<DIM>>, value: T::Variant) -> &mut Self {
+  pub fn insert(&mut self, pos: impl Into<UPos<DIM>>, value: V) -> &mut Self {
     let pos = pos.into();
-    self.input[pos.index(self.size)] = Some(value);
+    self.output_buffer[pos.index(self.size)] = Some(value);
     self
   }
 
@@ -61,38 +68,41 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> StateBuilder<T, DIM> {
     &self.size
   }
 
-  pub fn build(self) -> TResult<State<T, DIM>, T, DIM> {
+  pub fn build(self) -> Result<State<A, C, V, D, S, DIM>, err::Error<DIM>> {
     // seemingly cannot be done at compile time because
     // M::Dimensions::COUNT is not accessible inside static asserts
-    if DIM != T::Dimension::COUNT / 2 {
-      return Err(Error::DimensionMismatch(DIM, T::Dimension::COUNT));
+    if DIM != D::COUNT / 2 {
+      return Err(Error::DimensionMismatch {
+        const_value: DIM,
+        dimension_count: D::COUNT,
+      });
     }
-
-    let rules = self.rules.unwrap_or_default();
 
     State::new(
       self.size,
-      self.input,
-      rules,
       self.arbiter,
       self.constraint,
+      self.rules,
+      self.output_buffer,
       self.external_cells,
     )
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for StateBuilder<T, DIM>
+impl<A, C, V, D, S, const DIM: usize> Clone for StateBuilder<A, C, V, D, S, DIM>
 where
-  T::Arbiter: Clone,
-  T::Constraint: Clone,
-  T::Shape: Clone,
+  A: Arbiter<V> + Clone,
+  C: Constraint<S> + Clone,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
 {
   fn clone(&self) -> Self {
     Self {
       arbiter: self.arbiter.clone(),
       constraint: self.constraint.clone(),
       size: self.size,
-      input: self.input.clone(),
+      output_buffer: self.output_buffer.clone(),
       rules: self.rules.clone(),
       external_cells: self.external_cells.clone(),
     }
@@ -102,24 +112,40 @@ where
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct State<T: TypeAtlas<DIM>, const DIM: usize> {
-  cells: Cells<T, DIM>,
-  rules: Rules<T::Variant, T::Dimension, T::Socket>,
-  arbiter: T::Arbiter,
-  constraint: T::Constraint,
-  socket_cache: SocketCache<T, DIM>,
+pub struct State<A, C, V, D, S, const DIM: usize>
+where
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+{
+  cells: Cells<V, D, DIM>,
+  arbiter: A,
+  constraint: C,
+  rules: Rules<V, D, S>,
+  socket_cache: SocketCache<V, D, S>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
+impl<A, C, V, D, S, const DIM: usize> State<A, C, V, D, S, DIM>
+where
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+{
+  /// Creates a new instance of a State, with initial setup
   #[profiling::function]
   fn new(
     size: Size<DIM>,
-    input: Vec<Option<T::Variant>>,
-    rules: Rules<T::Variant, T::Dimension, T::Socket>,
-    arbiter: T::Arbiter,
-    constraint: T::Constraint,
-    external_cells: ExtCells<T, DIM>,
-  ) -> TResult<Self, T, DIM> {
+    arbiter: A,
+    constraint: C,
+    rules: Rules<V, D, S>,
+    input: Vec<Option<V>>,
+    external_cells: ExtCells<V, D, DIM>,
+  ) -> Result<Self, err::Error<DIM>> {
+    // create the state
     let mut this = Self {
       cells: Cells::new(size, input, &rules),
       rules,
@@ -128,51 +154,15 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
       socket_cache: Default::default(),
     };
 
-    for (dir, ext) in external_cells.sides.into_iter() {
-      let indexes = this.cells.uncollapsed_indexes_along_dir(dir);
-      for index in indexes {
-        let cell = this.cells.at_mut(index);
-        let neighbor = cell.position + dir;
-        let neighbor_index = neighbor.index_in(external_cells.size);
-        let external_variant = BTreeSet::from_iter([ext[neighbor_index].clone()]);
+    this.apply_external_information(external_cells)?;
 
-        let starting_entropy = cell.entropy;
-        Self::constrain(
-          cell,
-          &this.constraint,
-          &external_variant,
-          &dir.opposite(),
-          &this.rules,
-          &mut this.socket_cache,
-        )?;
-        let new_entropy = cell.entropy;
-
-        if starting_entropy != new_entropy {
-          this.cells.set_entropy(starting_entropy, index, new_entropy);
-        }
-
-        this.propagate(index)?;
-      }
-    }
-
-    let propagations = this
-      .cells
-      .list
-      .iter()
-      .enumerate()
-      .filter_map(|(i, cell)| cell.selected_variant().cloned().map(|variant| (i, variant)))
-      .collect::<Vec<_>>();
-
-    for (i, variant) in propagations {
-      this.arbiter.revise(&variant, &mut this.cells);
-      this.propagate(i)?;
-    }
+    this.apply_predetermined_cells()?;
 
     Ok(this)
   }
 
   #[profiling::function]
-  pub fn collapse(&mut self) -> TResult<Observation, T, DIM> {
+  pub fn collapse(&mut self) -> Result<Observation, err::Error<DIM>> {
     let Some(index) = self.arbiter.designate(&mut self.cells)? else {
       return Ok(Observation::Complete);
     };
@@ -186,9 +176,10 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
     Ok(Observation::Incomplete(index))
   }
 
+  /// propagate the information of the supplied cell to its neighbors, and repeat until there are no more constraints made
   #[profiling::function]
-  fn propagate(&mut self, cell_index: usize) -> TResult<(), T, DIM> {
-    let mut stack = Vec::with_capacity(T::Dimension::COUNT);
+  fn propagate(&mut self, cell_index: usize) -> Result<(), err::Error<DIM>> {
+    let mut stack = Vec::with_capacity(D::COUNT);
     stack.push(cell_index);
 
     while let Some(cell_index) = stack.pop() {
@@ -210,8 +201,8 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
           neighbor,
           &self.constraint,
           &cell.possibilities,
-          &direction,
-          &mut self.rules,
+          direction,
+          &self.rules,
           &mut self.socket_cache,
         )?;
         let new_entropy = neighbor.entropy;
@@ -229,24 +220,19 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
     Ok(())
   }
 
-  pub fn data(&self) -> Vec<T::Variant>
+  pub fn data(&self) -> Vec<V>
   where
-    T::Variant: Default,
+    V: Default,
   {
     self
       .cells
       .list
       .iter()
-      .map(|cell| {
-        cell
-          .selected_variant()
-          .cloned()
-          .unwrap_or_else(|| T::Variant::default())
-      })
+      .map(|cell| cell.selected_variant().cloned().unwrap_or_default())
       .collect()
   }
 
-  pub fn data_raw(&self) -> Vec<Option<T::Variant>> {
+  pub fn data_raw(&self) -> Vec<Option<V>> {
     self
       .cells
       .list
@@ -255,7 +241,7 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
       .collect()
   }
 
-  pub fn cells(&self) -> &Cells<T, DIM> {
+  pub fn cells(&self) -> &Cells<V, D, DIM> {
     &self.cells
   }
 
@@ -263,11 +249,11 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
     &self.cells.size
   }
 
-  pub fn rules(&self) -> &Rules<T::Variant, T::Dimension, T::Socket> {
+  pub fn rules(&self) -> &Rules<V, D, S> {
     &self.rules
   }
 
-  pub fn constrainer(&self) -> &T::Constraint {
+  pub fn constrainer(&self) -> &C {
     &self.constraint
   }
 
@@ -275,17 +261,17 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
   /// Returns true if at least one reduction was made, false otherwise
   #[profiling::function]
   fn constrain(
-    cell: &mut Cell<T::Variant, T::Dimension, DIM>,
-    constraint: &T::Constraint,
-    neighbor_possibilities: &BTreeSet<T::Variant>,
-    neighbor_to_self_dir: &T::Dimension,
-    rules: &Rules<T::Variant, T::Dimension, T::Socket>,
-    cache: &mut SocketCache<T, DIM>,
-  ) -> TResult<(), T, DIM> {
-    let neighbor_sockets: &HashSet<T::Socket> = {
+    cell: &mut Cell<V, D, DIM>,
+    constraint: &C,
+    neighbor_possibilities: &BTreeSet<V>,
+    neighbor_to_self_dir: D,
+    rules: &Rules<V, D, S>,
+    cache: &mut SocketCache<V, D, S>,
+  ) -> Result<(), err::Error<DIM>> {
+    let neighbor_sockets = {
       profiling::function_scope!("Neighbor Sockets");
 
-      match cache.lookup(neighbor_possibilities, neighbor_to_self_dir) {
+      match cache.lookup(neighbor_possibilities, &neighbor_to_self_dir) {
         Some(Some(sockets)) => sockets,
         Some(None) => cache.partial_create(rules, neighbor_possibilities, neighbor_to_self_dir),
         None => cache.full_create(rules, neighbor_possibilities, neighbor_to_self_dir),
@@ -295,12 +281,12 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
     let opposite = neighbor_to_self_dir.opposite();
 
     cell.possibilities.retain(|variant| {
-      let Some(self_rule) = rules.get(variant) else {
+      let Some(self_rule) = rules.rule_for(variant) else {
         return false;
       };
 
       self_rule
-        .get(&opposite)
+        .socket_for(&opposite)
         .map(|socket| constraint.check(socket, neighbor_sockets))
         .unwrap_or(false) // no rule means no connection
     });
@@ -309,9 +295,6 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
       return Err(Error::Contradiction {
         position: cell.position,
         neighbor: cell.position + neighbor_to_self_dir.opposite(),
-        direction: neighbor_to_self_dir.opposite(),
-        neighbor_variants: Vec::from_iter(neighbor_possibilities.iter().cloned()),
-        neighbor_sockets: neighbor_sockets.iter().cloned().collect(),
       });
     }
 
@@ -319,11 +302,71 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> State<T, DIM> {
 
     Ok(())
   }
+
+  /// Propagates information to cells if there is a generation on a neighboring side
+  fn apply_external_information(
+    &mut self,
+    external_cells: ExtCells<V, D, DIM>,
+  ) -> Result<(), err::Error<DIM>> {
+    for (dir, ext) in external_cells.sides.into_iter() {
+      let indexes = self.cells.uncollapsed_indexes_along_dir(dir);
+      for index in indexes {
+        let cell = self.cells.at_mut(index);
+        let neighbor = cell.position + dir;
+        let neighbor_index = neighbor.index_in(external_cells.size);
+        let external_variant = BTreeSet::from_iter([ext[neighbor_index].clone()]);
+
+        let starting_entropy = cell.entropy;
+        Self::constrain(
+          cell,
+          &self.constraint,
+          &external_variant,
+          dir.opposite(),
+          &self.rules,
+          &mut self.socket_cache,
+        )?;
+        let new_entropy = cell.entropy;
+
+        if starting_entropy != new_entropy {
+          self.cells.set_entropy(starting_entropy, index, new_entropy);
+        }
+
+        self.propagate(index)?;
+      }
+    }
+
+    Ok(())
+  }
+
+  /// For any cells that are collapsed, propagate that information
+  fn apply_predetermined_cells(&mut self) -> Result<(), err::Error<DIM>> {
+    let propagations = self
+      .cells
+      .list
+      .iter()
+      .enumerate()
+      .filter_map(|(i, cell)| cell.selected_variant().cloned().map(|variant| (i, variant)))
+      .collect::<Vec<_>>();
+
+    for (i, variant) in propagations {
+      self.arbiter.revise(&variant, &mut self.cells);
+      self.propagate(i)?;
+    }
+
+    Ok(())
+  }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Into<Vec<T::Variant>> for State<T, DIM> {
-  fn into(self) -> Vec<T::Variant> {
-    self
+impl<A, C, V, D, S, const DIM: usize> From<State<A, C, V, D, S, DIM>> for Vec<V>
+where
+  A: Arbiter<V>,
+  C: Constraint<S>,
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+{
+  fn from(state: State<A, C, V, D, S, DIM>) -> Self {
+    state
       .cells
       .list
       .into_iter()
@@ -332,59 +375,54 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Into<Vec<T::Variant>> for State<T, DIM
   }
 }
 
-#[derive(Debug, Deref, DerefMut)]
+type InnerSocketCache<V, D, S> = HashMap<BTreeSet<V>, HashMap<D, HashSet<S>>>;
+
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-struct SocketCache<T: TypeAtlas<DIM>, const DIM: usize>(
-  HashMap<BTreeSet<T::Variant>, HashMap<T::Dimension, HashSet<T::Socket>>>,
-);
+struct SocketCache<V: Variant, D: Dimension, S: Socket>(InnerSocketCache<V, D, S>);
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Default for SocketCache<T, DIM> {
+impl<V: Variant, D: Dimension, S: Socket> Default for SocketCache<V, D, S> {
   fn default() -> Self {
     Self(Default::default())
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
-  fn lookup(
-    &mut self,
-    variants: &BTreeSet<T::Variant>,
-    dir: &T::Dimension,
-  ) -> Option<Option<&HashSet<T::Socket>>> {
-    self.get(variants).map(|dirmap| dirmap.get(&dir))
+impl<V: Variant, D: Dimension, S: Socket> SocketCache<V, D, S> {
+  fn lookup(&mut self, variants: &BTreeSet<V>, dir: &D) -> Option<Option<&HashSet<S>>> {
+    self.0.get(variants).map(|dirmap| dirmap.get(dir))
   }
 
-  fn full_create(
-    &mut self,
-    rules: &Rules<T::Variant, T::Dimension, T::Socket>,
-    variants: &BTreeSet<T::Variant>,
-    dir: &T::Dimension,
-  ) -> &HashSet<T::Socket> {
-    let dir_map = self.entry(variants.clone()).or_default();
-    dir_map.entry(*dir).or_insert_with(|| {
+  fn full_create(&mut self, rules: &Rules<V, D, S>, variants: &BTreeSet<V>, dir: D) -> &HashSet<S> {
+    let dir_map = self.0.entry(variants.clone()).or_default();
+    dir_map.entry(dir).or_insert_with(|| {
       variants
         .iter()
-        .map(|id| rules.get(id).and_then(|rule| rule.get(dir)))
-        .flatten()
-        .cloned()
-        .collect::<HashSet<T::Socket>>()
+        .flat_map(|id| {
+          rules
+            .rule_for(id)
+            .and_then(|rule| rule.socket_for(&dir).cloned())
+        })
+        .collect::<HashSet<S>>()
     })
   }
 
   fn partial_create(
     &mut self,
-    rules: &Rules<T::Variant, T::Dimension, T::Socket>,
-    variants: &BTreeSet<T::Variant>,
-    dir: &T::Dimension,
-  ) -> &HashSet<T::Socket> {
-    let dir_map = self.get_mut(variants).unwrap();
-    dir_map.entry(*dir).or_insert_with(|| {
+    rules: &Rules<V, D, S>,
+    variants: &BTreeSet<V>,
+    dir: D,
+  ) -> &HashSet<S> {
+    let dir_map = self.0.get_mut(variants).unwrap();
+    dir_map.entry(dir).or_insert_with(|| {
       variants
         .iter()
-        .map(|id| rules.get(id).and_then(|rule| rule.get(dir)))
-        .flatten()
-        .cloned()
-        .collect::<HashSet<T::Socket>>()
+        .flat_map(|id| {
+          rules
+            .rule_for(id)
+            .and_then(|rule| rule.socket_for(&dir).cloned())
+        })
+        .collect::<HashSet<S>>()
     })
   }
 }
@@ -392,14 +430,21 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> SocketCache<T, DIM> {
 #[derive(Debug, Deref, DerefMut)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-struct ExtCells<T: TypeAtlas<DIM>, const DIM: usize> {
+struct ExtCells<V, D, const DIM: usize>
+where
+  D: Dimension,
+{
   size: Size<DIM>,
   #[deref]
   #[deref_mut]
-  sides: HashMap<T::Dimension, Vec<T::Variant>>,
+  sides: HashMap<D, Vec<V>>,
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for ExtCells<T, DIM> {
+impl<V, D, const DIM: usize> Clone for ExtCells<V, D, DIM>
+where
+  V: Clone,
+  D: Dimension,
+{
   fn clone(&self) -> Self {
     Self {
       size: self.size,
@@ -408,7 +453,10 @@ impl<T: TypeAtlas<DIM>, const DIM: usize> Clone for ExtCells<T, DIM> {
   }
 }
 
-impl<T: TypeAtlas<DIM>, const DIM: usize> ExtCells<T, DIM> {
+impl<V, D, const DIM: usize> ExtCells<V, D, DIM>
+where
+  D: Dimension,
+{
   fn new(size: Size<DIM>) -> Self {
     Self {
       size,

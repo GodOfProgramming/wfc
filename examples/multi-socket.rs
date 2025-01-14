@@ -1,39 +1,24 @@
-use maplit::hashmap;
-use prebuilt::{
-  arbiters::WeightArbiter, constraints::SetConstrainer, shapes::NoShape, weights::DirectWeight,
-};
+use prebuilt::{arbiters::RandomArbiter, constraints::UnaryConstraint};
 use std::collections::BTreeSet;
-use wfc::{prebuilt::Dim3d, prelude::*, Rule, StateBuilder};
-
-#[derive(Debug)]
-struct Bench;
-
-impl TypeAtlas<3> for Bench {
-  type Variant = usize;
-  type Dimension = Dim3d;
-  type Socket = BTreeSet<usize>;
-  type Arbiter = WeightArbiter<Self, 3>;
-  type Constraint = SetConstrainer;
-  type Weight = DirectWeight;
-  type Shape = NoShape;
-}
+use wfc::{prebuilt::Dim3d, prelude::*, StateBuilder};
 
 fn main() {
   #[cfg(feature = "profiling")]
   let _guards = wfc::perf::enable_profiling();
 
-  let mut builder = StateBuilder::<Bench, 3>::new(
-    [50, 50, 50],
-    WeightArbiter::new(None, NoShape),
-    SetConstrainer,
-  );
+  let rules: Rules<i32, Dim3d, BTreeSet<i32>> = RuleBuilder::default()
+    .with_rule(0, |_| BTreeSet::from_iter([0, 1]))
+    .with_rule(1, |_| BTreeSet::from_iter([0, 1, 2]))
+    .with_rule(2, |_| BTreeSet::from_iter([1, 2, 3]))
+    .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
+    .into();
 
-  builder.with_rules(hashmap! {
-    0 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1])),
-    1 => Rule::from_fn(|_| BTreeSet::from_iter([0, 1, 2])),
-    2 => Rule::from_fn(|_| BTreeSet::from_iter([1, 2, 3])),
-    3 => Rule::from_fn(|_| BTreeSet::from_iter([2, 3])),
-  });
+  let builder = StateBuilder::new(
+    [50, 50, 50],
+    RandomArbiter::default(),
+    UnaryConstraint,
+    rules,
+  );
 
   let mut state = builder.build().expect("Failed to build state");
 
