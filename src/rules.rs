@@ -1,4 +1,4 @@
-use crate::{Dimension, DimensionId, SocketId, VariantId};
+use crate::{Dimension, DimensionId, VariantId};
 use crate::{Socket, Variant};
 use bimap::BiHashMap;
 use derive_more::derive::{Deref, DerefMut, From, IntoIterator};
@@ -46,7 +46,7 @@ where
     self
   }
 
-  pub fn abstract_rules(&self) -> (AbstractRules, Legend<V, D, S>) {
+  pub fn abstract_rules(&self) -> (AbstractRules<S>, Legend<V, D>) {
     let legend = Legend::from(&self.table);
     let abstract_rules = self
       .table
@@ -60,10 +60,9 @@ where
             .iter()
             .map(|(dim, socket)| {
               let di = legend.dimension_id(dim);
-              let si = legend.socket_id(socket);
-              (di, si)
+              (di, socket.clone())
             })
-            .collect::<AbstractRule>(),
+            .collect::<AbstractRule<S>>(),
         )
       })
       .collect();
@@ -112,8 +111,8 @@ where
   S: Socket,
 {
   table: HashMap<V, Rule<D, S>>,
-  abstract_rules: AbstractRules,
-  legend: Legend<V, D, S>,
+  abstract_rules: AbstractRules<S>,
+  legend: Legend<V, D>,
 }
 
 impl<V, D, S> Clone for Rules<V, D, S>
@@ -141,11 +140,11 @@ where
     self.table.keys()
   }
 
-  pub fn abstract_rules(&self) -> &AbstractRules {
+  pub fn abstract_rules(&self) -> &AbstractRules<S> {
     &self.abstract_rules
   }
 
-  pub fn legend(&self) -> &Legend<V, D, S> {
+  pub fn legend(&self) -> &Legend<V, D> {
     &self.legend
   }
 }
@@ -259,16 +258,24 @@ where
   }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct Legend<V: Variant, D: Dimension, S: Socket> {
+pub struct Legend<V: Variant, D: Dimension> {
   variants: BiHashMap<VariantId, V>,
   dimensions: BiHashMap<DimensionId, D>,
-  sockets: BiHashMap<SocketId, S>,
 }
 
-impl<V: Variant, D: Dimension, S: Socket> Legend<V, D, S> {
+impl<V: Variant, D: Dimension> Clone for Legend<V, D> {
+  fn clone(&self) -> Self {
+    Self {
+      variants: self.variants.clone(),
+      dimensions: self.dimensions.clone(),
+    }
+  }
+}
+
+impl<V: Variant, D: Dimension> Legend<V, D> {
   pub fn variant_id(&self, variant: &V) -> VariantId {
     *self.variants.get_by_right(variant).unwrap()
   }
@@ -280,47 +287,36 @@ impl<V: Variant, D: Dimension, S: Socket> Legend<V, D, S> {
   pub fn dimension_id(&self, dimension: &D) -> DimensionId {
     *self.dimensions.get_by_right(dimension).unwrap()
   }
-
-  pub fn socket_id(&self, socket: &S) -> SocketId {
-    *self.sockets.get_by_right(socket).unwrap()
-  }
-
-  pub fn sockets_of(table: &HashMap<V, Rule<D, S>>) -> impl Iterator<Item = &S> {
-    table
-      .values()
-      .flat_map(|rule: &Rule<D, S>| rule.table.values())
-  }
 }
 
-impl<V: Variant, D: Dimension, S: Socket> From<&HashMap<V, Rule<D, S>>> for Legend<V, D, S> {
+impl<V: Variant, D: Dimension, S: Socket> From<&HashMap<V, Rule<D, S>>> for Legend<V, D> {
   fn from(table: &HashMap<V, Rule<D, S>>) -> Self {
     let variants = table.keys().sorted().cloned().enumerate().collect();
     let dimensions = D::iter()
       .enumerate()
       .map(|(i, d)| (DimensionId::new(i), d))
       .collect();
-    let sockets = Self::sockets_of(table)
-      .unique()
-      .sorted()
-      .cloned()
-      .enumerate()
-      .collect();
 
     Self {
       variants,
       dimensions,
-      sockets,
     }
   }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct AbstractRules(HashMap<usize, AbstractRule>);
+pub struct AbstractRules<S: Socket>(HashMap<usize, AbstractRule<S>>);
 
-impl AbstractRules {
-  pub fn rule_for(&self, variant: VariantId) -> Option<&AbstractRule> {
+impl<S: Socket> Clone for AbstractRules<S> {
+  fn clone(&self) -> Self {
+    Self(self.0.clone())
+  }
+}
+
+impl<S: Socket> AbstractRules<S> {
+  pub fn rule_for(&self, variant: VariantId) -> Option<&AbstractRule<S>> {
     self.0.get(&variant)
   }
 
@@ -329,8 +325,8 @@ impl AbstractRules {
   }
 }
 
-impl std::iter::FromIterator<(VariantId, AbstractRule)> for AbstractRules {
-  fn from_iter<T: IntoIterator<Item = (usize, AbstractRule)>>(iter: T) -> Self {
+impl<S: Socket> FromIterator<(VariantId, AbstractRule<S>)> for AbstractRules<S> {
+  fn from_iter<T: IntoIterator<Item = (usize, AbstractRule<S>)>>(iter: T) -> Self {
     Self(HashMap::from_iter(iter))
   }
 }
@@ -338,16 +334,16 @@ impl std::iter::FromIterator<(VariantId, AbstractRule)> for AbstractRules {
 #[derive(PartialEq, Eq, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct AbstractRule(HashMap<DimensionId, SocketId>);
+pub struct AbstractRule<S: Socket>(HashMap<DimensionId, S>);
 
-impl AbstractRule {
-  pub fn socket_for(&self, dir: DimensionId) -> Option<SocketId> {
-    self.0.get(&dir).cloned()
+impl<S: Socket> AbstractRule<S> {
+  pub fn socket_for(&self, dir: DimensionId) -> Option<&S> {
+    self.0.get(&dir)
   }
 }
 
-impl FromIterator<(DimensionId, SocketId)> for AbstractRule {
-  fn from_iter<T: IntoIterator<Item = (DimensionId, SocketId)>>(iter: T) -> Self {
+impl<S: Socket> FromIterator<(DimensionId, S)> for AbstractRule<S> {
+  fn from_iter<T: IntoIterator<Item = (DimensionId, S)>>(iter: T) -> Self {
     Self(HashMap::from_iter(iter))
   }
 }

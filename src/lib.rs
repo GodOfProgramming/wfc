@@ -40,31 +40,13 @@ pub mod prelude {
 
 pub use prelude::*;
 
-pub type CellIndex = usize;
-pub type VariantId = usize;
-pub type SocketId = usize;
-
-#[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-pub struct DimensionId(usize);
-impl DimensionId {
-  fn opposite(self) -> Self {
-    if *self & 1 == 0 {
-      Self(*self + 1)
-    } else {
-      Self(*self - 1)
-    }
-  }
-}
-
 #[profiling::function]
 pub fn collapse<A, C, V, D, S, const DIM: usize>(
   state: &mut State<A, C, V, D, S, DIM>,
 ) -> Result<(), err::Error<DIM>>
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -77,6 +59,9 @@ where
   Ok(())
 }
 
+pub type CellIndex = usize;
+
+pub type VariantId = usize;
 pub trait Variant: Debug + Eq + Hash + Ord + Clone {}
 
 impl<T> Variant for T where T: Debug + Eq + Hash + Ord + Clone {}
@@ -102,6 +87,20 @@ pub trait Dimension:
   + VariantArray
 {
   fn opposite(&self) -> Self;
+}
+
+#[derive(new, Deref, DerefMut, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
+pub struct DimensionId(usize);
+impl DimensionId {
+  fn opposite(self) -> Self {
+    if *self & 1 == 0 {
+      Self(*self + 1)
+    } else {
+      Self(*self - 1)
+    }
+  }
 }
 
 #[derive(PartialEq, Eq)]

@@ -28,8 +28,8 @@ impl<const DIM: usize> Cells<DIM> {
   pub fn new<V: Variant, D: Dimension, S: Socket>(
     size: Size<DIM>,
     input: Vec<Option<V>>,
-    rules: &AbstractRules,
-    legend: &Legend<V, D, S>,
+    rules: &AbstractRules<S>,
+    legend: &Legend<V, D>,
   ) -> Self {
     let all_possibilities = BTreeSet::from_iter(rules.variants().cloned());
     let mut entropy_cache = EntropyCache::new(all_possibilities.len());
@@ -146,11 +146,11 @@ pub struct Cell<const DIM: usize> {
 }
 
 impl<const DIM: usize> Cell<DIM> {
-  fn new<V: Variant, D: Dimension, S: Socket>(
+  fn new<V: Variant, D: Dimension>(
     position: IPos<DIM>,
     possibilities: impl Into<BTreeSet<VariantId>>,
     size: Size<DIM>,
-    legend: &Legend<V, D, S>,
+    legend: &Legend<V, D>,
   ) -> Self {
     let possibilities = possibilities.into();
     let entropy = possibilities.len();
@@ -162,11 +162,11 @@ impl<const DIM: usize> Cell<DIM> {
     }
   }
 
-  pub fn new_collapsed<V: Variant, D: Dimension, S: Socket>(
+  pub fn new_collapsed<V: Variant, D: Dimension>(
     position: IPos<DIM>,
     collapsed_variant: &V,
     size: Size<DIM>,
-    legend: &Legend<V, D, S>,
+    legend: &Legend<V, D>,
   ) -> Self {
     Self {
       possibilities: BTreeSet::from_iter([legend.variant_id(collapsed_variant)]),
@@ -197,10 +197,10 @@ impl<const DIM: usize> Cell<DIM> {
     self.entropy == 0
   }
 
-  fn neighbors<V: Variant, D: Dimension, S: Socket>(
+  fn neighbors<V: Variant, D: Dimension>(
     position: IPos<DIM>,
     size: Size<DIM>,
-    legend: &Legend<V, D, S>,
+    legend: &Legend<V, D>,
   ) -> Vec<(CellIndex, DimensionId)> {
     D::iter()
       .filter_map(|dir| {

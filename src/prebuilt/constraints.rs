@@ -1,4 +1,4 @@
-use crate::{Constraint, Socket, SocketId};
+use crate::{Constraint, Socket};
 use std::{
   collections::{BTreeSet, HashSet},
   fmt::Debug,
@@ -6,10 +6,10 @@ use std::{
 };
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct UnaryConstraint;
+pub struct UnaryConstraint<S: Socket>(PhantomData<S>);
 
-impl Constraint for UnaryConstraint {
-  type Socket = SocketId;
+impl<S: Socket> Constraint for UnaryConstraint<S> {
+  type Socket = S;
 
   #[profiling::function]
   fn check(&self, socket: &Self::Socket, sockets: &HashSet<Self::Socket>) -> bool {

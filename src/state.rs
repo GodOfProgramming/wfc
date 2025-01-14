@@ -3,8 +3,8 @@ use crate::{
   err,
   rules::AbstractRules,
   util::{self, Size, UPos},
-  Arbiter, Constraint, Dimension, DimensionId, Error, Observation, Rules, Socket, SocketId,
-  Variant, VariantId,
+  Arbiter, Constraint, Dimension, DimensionId, Error, Observation, Rules, Socket, Variant,
+  VariantId,
 };
 use derive_more::derive::{Deref, DerefMut};
 use std::{
@@ -17,7 +17,7 @@ use std::{
 pub struct StateBuilder<A, C, V, D, S, const DIM: usize>
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -33,7 +33,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> StateBuilder<A, C, V, D, S, DIM>
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -94,7 +94,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> Clone for StateBuilder<A, C, V, D, S, DIM>
 where
   A: Arbiter + Clone,
-  C: Constraint + Clone,
+  C: Constraint<Socket = S> + Clone,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -117,7 +117,7 @@ where
 pub struct State<A, C, V, D, S, const DIM: usize>
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -126,13 +126,13 @@ where
   arbiter: A,
   constraint: C,
   rules: Rules<V, D, S>,
-  socket_cache: SocketCache,
+  socket_cache: SocketCache<S>,
 }
 
 impl<A, C, V, D, S, const DIM: usize> State<A, C, V, D, S, DIM>
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -311,10 +311,10 @@ where
     constraint: &C,
     neighbor_possibilities: &BTreeSet<VariantId>,
     neighbor_to_self_dir: DimensionId,
-    rules: &AbstractRules,
-    cache: &mut SocketCache,
+    rules: &AbstractRules<S>,
+    cache: &mut SocketCache<S>,
   ) -> Result<(), err::Error<DIM>> {
-    let neighbor_sockets: &HashSet<SocketId> = {
+    let neighbor_sockets = {
       profiling::function_scope!("Neighbor Sockets");
 
       match cache.lookup(neighbor_possibilities, neighbor_to_self_dir) {
@@ -341,9 +341,6 @@ where
       return Err(Error::Contradiction {
         position: cell.position,
         neighbor: cell.position + neighbor_to_self_dir.opposite(),
-        direction: opposite,
-        neighbor_variants: Vec::from_iter(neighbor_possibilities.iter().cloned()),
-        neighbor_sockets: neighbor_sockets.iter().cloned().collect(),
       });
     }
 
@@ -356,7 +353,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> From<State<A, C, V, D, S, DIM>> for Vec<V>
 where
   A: Arbiter,
-  C: Constraint,
+  C: Constraint<Socket = S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -376,49 +373,63 @@ where
   }
 }
 
-type InnerSocketCache = HashMap<BTreeSet<VariantId>, HashMap<DimensionId, HashSet<SocketId>>>;
+type InnerSocketCache<S> = HashMap<BTreeSet<VariantId>, HashMap<DimensionId, HashSet<S>>>;
 
-#[derive(Default, Debug, Deref, DerefMut)]
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
-struct SocketCache(InnerSocketCache);
+struct SocketCache<S>(InnerSocketCache<S>);
 
-impl SocketCache {
+impl<S> Default for SocketCache<S> {
+  fn default() -> Self {
+    Self(Default::default())
+  }
+}
+
+impl<S: Socket> SocketCache<S> {
   fn lookup(
     &mut self,
     variants: &BTreeSet<VariantId>,
     dir: DimensionId,
-  ) -> Option<Option<&HashSet<SocketId>>> {
-    self.get(variants).map(|dirmap| dirmap.get(&dir))
+  ) -> Option<Option<&HashSet<S>>> {
+    self.0.get(variants).map(|dirmap| dirmap.get(&dir))
   }
 
   fn full_create(
     &mut self,
-    rules: &AbstractRules,
+    rules: &AbstractRules<S>,
     variants: &BTreeSet<VariantId>,
     dir: DimensionId,
-  ) -> &HashSet<SocketId> {
-    let dir_map = self.entry(variants.clone()).or_default();
+  ) -> &HashSet<S> {
+    let dir_map = self.0.entry(variants.clone()).or_default();
     dir_map.entry(dir).or_insert_with(|| {
       variants
         .iter()
-        .flat_map(|id| rules.rule_for(*id).and_then(|rule| rule.socket_for(dir)))
-        .collect::<HashSet<SocketId>>()
+        .flat_map(|id| {
+          rules
+            .rule_for(*id)
+            .and_then(|rule| rule.socket_for(dir).cloned())
+        })
+        .collect::<HashSet<S>>()
     })
   }
 
   fn partial_create(
     &mut self,
-    rules: &AbstractRules,
+    rules: &AbstractRules<S>,
     variants: &BTreeSet<VariantId>,
     dir: DimensionId,
-  ) -> &HashSet<SocketId> {
-    let dir_map = self.get_mut(variants).unwrap();
+  ) -> &HashSet<S> {
+    let dir_map = self.0.get_mut(variants).unwrap();
     dir_map.entry(dir).or_insert_with(|| {
       variants
         .iter()
-        .flat_map(|id| rules.rule_for(*id).and_then(|rule| rule.socket_for(dir)))
-        .collect::<HashSet<SocketId>>()
+        .flat_map(|id| {
+          rules
+            .rule_for(*id)
+            .and_then(|rule| rule.socket_for(dir).cloned())
+        })
+        .collect::<HashSet<S>>()
     })
   }
 }
