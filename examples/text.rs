@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     &rules,
   ));
 
-  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint::default(), rules);
+  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];

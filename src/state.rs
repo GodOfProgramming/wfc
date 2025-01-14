@@ -17,7 +17,7 @@ use std::{
 pub struct StateBuilder<A, C, V, D, S, const DIM: usize>
 where
   A: Arbiter,
-  C: Constraint<Socket = S>,
+  C: Constraint<S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -33,7 +33,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> StateBuilder<A, C, V, D, S, DIM>
 where
   A: Arbiter,
-  C: Constraint<Socket = S>,
+  C: Constraint<S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -94,7 +94,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> Clone for StateBuilder<A, C, V, D, S, DIM>
 where
   A: Arbiter + Clone,
-  C: Constraint<Socket = S> + Clone,
+  C: Constraint<S> + Clone,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -117,7 +117,7 @@ where
 pub struct State<A, C, V, D, S, const DIM: usize>
 where
   A: Arbiter,
-  C: Constraint<Socket = S>,
+  C: Constraint<S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -132,7 +132,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> State<A, C, V, D, S, DIM>
 where
   A: Arbiter,
-  C: Constraint<Socket = S>,
+  C: Constraint<S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -353,7 +353,7 @@ where
 impl<A, C, V, D, S, const DIM: usize> From<State<A, C, V, D, S, DIM>> for Vec<V>
 where
   A: Arbiter,
-  C: Constraint<Socket = S>,
+  C: Constraint<S>,
   V: Variant,
   D: Dimension,
   S: Socket,

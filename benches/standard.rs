@@ -83,7 +83,7 @@ mod text {
 
       let size = Size::new([dims as usize, dims as usize]);
 
-      let mut builder = StateBuilder::new(size, arbiter, UnaryConstraint::default(), rules.clone());
+      let mut builder = StateBuilder::new(size, arbiter, UnaryConstraint, rules.clone());
 
       builder
         .insert([size.x - 1, size.y - 1], TextMazeBench::EXIT)
@@ -128,12 +128,7 @@ mod misc {
       .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
       .into();
 
-    let builder = StateBuilder::new(
-      size,
-      RandomArbiter::new(Some(SEED)),
-      SetConstraint::default(),
-      rules,
-    );
+    let builder = StateBuilder::new(size, RandomArbiter::new(Some(SEED)), SetConstraint, rules);
     let mut state = builder.build().expect("Failed to build state");
     wfc::collapse(&mut state).expect("Failed to collapse");
   }

@@ -46,7 +46,7 @@ pub fn collapse<A, C, V, D, S, const DIM: usize>(
 ) -> Result<(), err::Error<DIM>>
 where
   A: Arbiter,
-  C: Constraint<Socket = S>,
+  C: Constraint<S>,
   V: Variant,
   D: Dimension,
   S: Socket,
@@ -140,9 +140,8 @@ pub trait Adjuster {
     A: Adjuster;
 }
 
-pub trait Constraint: Debug {
-  type Socket: Socket;
-  fn check(&self, socket: &Self::Socket, all_connecting_sockets: &HashSet<Self::Socket>) -> bool;
+pub trait Constraint<S: Socket>: Debug {
+  fn check(&self, socket: &S, all_connecting_sockets: &HashSet<S>) -> bool;
 }
 
 pub trait Weight:

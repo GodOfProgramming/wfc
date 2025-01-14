@@ -16,7 +16,7 @@ fn main() {
   let builder = StateBuilder::new(
     [50, 50, 50],
     RandomArbiter::default(),
-    UnaryConstraint::default(),
+    UnaryConstraint,
     rules,
   );
 
