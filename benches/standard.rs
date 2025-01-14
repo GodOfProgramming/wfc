@@ -109,7 +109,7 @@ mod text {
 mod misc {
   use crate::SEED;
   use criterion::Criterion;
-  use prebuilt::{arbiters::RandomArbiter, constraints::UnaryConstraint};
+  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
   use std::collections::BTreeSet;
   use wfc::{prebuilt::Dim3d, prelude::*, Size, StateBuilder};
 
@@ -131,7 +131,7 @@ mod misc {
     let builder = StateBuilder::new(
       size,
       RandomArbiter::new(Some(SEED)),
-      UnaryConstraint::default(),
+      SetConstraint::default(),
       rules,
     );
     let mut state = builder.build().expect("Failed to build state");
