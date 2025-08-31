@@ -1,9 +1,9 @@
 use maplit::hashmap;
 use prebuilt::{
-  arbiters::{LimitAdjuster, WeightArbiter},
   auto::GenericFinder,
   constraints::UnaryConstraint,
   e2e::maze2d::{Maze2dTypeSet, MazeRuleProvider},
+  processing::{LimitMod, WeightedObserver},
   shapes::{InformedShape, MultiShape, WeightedShape},
   Dim2d,
 };
@@ -12,7 +12,7 @@ use std::{
   error::Error,
   fmt::{Debug, Display},
 };
-use wfc::{prelude::*, Adjuster, Arbiter, Constraint, Dimension, Socket, Variant};
+use wfc::{prelude::*, Constraint, Dimension, Modifier, Observer, Socket, Variant};
 
 const STEP_BY_STEP: bool = false;
 
@@ -89,15 +89,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
   );
 
-  let arbiter = WeightArbiter::new(seed, shape);
-  println!("Seed: {}", arbiter.seed());
+  let obs = WeightedObserver::new(seed, shape);
+  println!("Seed: {}", obs.seed());
 
-  let arbiter = arbiter.chain(LimitAdjuster::new(hashmap! {
+  let obs = obs.chain(LimitMod::new(hashmap! {
     TextMaze::ENTRANCE => 0,
     TextMaze::EXIT => 0,
   }));
 
-  let mut builder = StateBuilder::new([COLS, ROWS], arbiter, UnaryConstraint, rules);
+  let mut builder = StateBuilder::new([COLS, ROWS], obs, UnaryConstraint, rules);
 
   let vertical = vec![TextMaze::VERTICAL; COLS * ROWS];
   let horizontal = vec![TextMaze::HORIZONTAL; COLS * ROWS];
@@ -120,9 +120,9 @@ fn main() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn all_at_once<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
+fn all_at_once<O, C, V, D, S, const DIM: usize>(mut state: State<O, C, V, D, S, DIM>)
 where
-  A: Arbiter<V>,
+  O: Observer<V>,
   C: Constraint<S>,
   V: Variant + Display,
   D: Dimension,
@@ -136,9 +136,9 @@ where
   print_state(state);
 }
 
-fn step_by_step<A, C, V, D, S, const DIM: usize>(mut state: State<A, C, V, D, S, DIM>)
+fn step_by_step<O, C, V, D, S, const DIM: usize>(mut state: State<O, C, V, D, S, DIM>)
 where
-  A: Arbiter<V>,
+  O: Observer<V>,
   C: Constraint<S>,
   V: Variant + Display + Default,
   D: Dimension,
@@ -174,9 +174,9 @@ where
   print_state(state);
 }
 
-fn print_state<A, C, V, D, S, const DIM: usize>(state: State<A, C, V, D, S, DIM>)
+fn print_state<O, C, V, D, S, const DIM: usize>(state: State<O, C, V, D, S, DIM>)
 where
-  A: Arbiter<V>,
+  O: Observer<V>,
   C: Constraint<S>,
   V: Variant + Display,
   D: Dimension,

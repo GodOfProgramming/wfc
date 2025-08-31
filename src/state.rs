@@ -2,7 +2,7 @@ use crate::{
   cells::{Cell, Cells},
   err,
   util::{self, Size, UPos},
-  Arbiter, Constraint, Dimension, Error, Observation, Rules, Socket, Variant,
+  Constraint, Dimension, Error, Observation, Observer, Rules, Socket, Variant,
 };
 use derive_more::derive::{Deref, DerefMut};
 use std::{
@@ -14,7 +14,7 @@ use std::{
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct StateBuilder<A, C, V, D, S, const DIM: usize>
 where
-  A: Arbiter<V>,
+  A: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -28,9 +28,9 @@ where
   external_cells: ExtCells<V, D, DIM>,
 }
 
-impl<A, C, V, D, S, const DIM: usize> StateBuilder<A, C, V, D, S, DIM>
+impl<O, C, V, D, S, const DIM: usize> StateBuilder<O, C, V, D, S, DIM>
 where
-  A: Arbiter<V>,
+  O: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -38,14 +38,14 @@ where
 {
   pub fn new(
     size: impl Into<Size<DIM>>,
-    arbiter: A,
+    obs: O,
     constraint: C,
     rules: impl Into<Rules<V, D, S>>,
   ) -> Self {
     let size = size.into();
     Self {
       size,
-      arbiter,
+      arbiter: obs,
       constraint,
       rules: rules.into(),
       output_buffer: vec![None; size.len()],
@@ -68,7 +68,7 @@ where
     &self.size
   }
 
-  pub fn build(self) -> Result<State<A, C, V, D, S, DIM>, err::Error<DIM>> {
+  pub fn build(self) -> Result<State<O, C, V, D, S, DIM>, err::Error<DIM>> {
     // seemingly cannot be done at compile time because
     // M::Dimensions::COUNT is not accessible inside static asserts
     if DIM != D::COUNT / 2 {
@@ -91,7 +91,7 @@ where
 
 impl<A, C, V, D, S, const DIM: usize> Clone for StateBuilder<A, C, V, D, S, DIM>
 where
-  A: Arbiter<V> + Clone,
+  A: Observer<V> + Clone,
   C: Constraint<S> + Clone,
   V: Variant,
   D: Dimension,
@@ -114,7 +114,7 @@ where
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct State<A, C, V, D, S, const DIM: usize>
 where
-  A: Arbiter<V>,
+  A: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -129,7 +129,7 @@ where
 
 impl<A, C, V, D, S, const DIM: usize> State<A, C, V, D, S, DIM>
 where
-  A: Arbiter<V>,
+  A: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -163,14 +163,14 @@ where
 
   #[profiling::function]
   pub fn collapse(&mut self) -> Result<Observation, err::Error<DIM>> {
-    let Some(index) = self.arbiter.designate(&mut self.cells)? else {
+    let Some(index) = self.arbiter.observe(&mut self.cells)? else {
       return Ok(Observation::Complete);
     };
 
     let cell = &self.cells.list[index];
     let possibility = cell.selected_variant().cloned().unwrap();
 
-    self.arbiter.revise(&possibility, &mut self.cells);
+    self.arbiter.modify(&possibility, &mut self.cells);
     self.propagate(index)?;
 
     Ok(Observation::Incomplete(index))
@@ -349,7 +349,7 @@ where
       .collect::<Vec<_>>();
 
     for (i, variant) in propagations {
-      self.arbiter.revise(&variant, &mut self.cells);
+      self.arbiter.modify(&variant, &mut self.cells);
       self.propagate(i)?;
     }
 
@@ -359,7 +359,7 @@ where
 
 impl<A, C, V, D, S, const DIM: usize> From<State<A, C, V, D, S, DIM>> for Vec<V>
 where
-  A: Arbiter<V>,
+  A: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,

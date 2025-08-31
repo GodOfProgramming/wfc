@@ -46,7 +46,7 @@ pub fn collapse<A, C, V, D, S, const DIM: usize>(
   state: &mut State<A, C, V, D, S, DIM>,
 ) -> Result<(), err::Error<DIM>>
 where
-  A: Arbiter<V>,
+  A: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -142,23 +142,23 @@ impl Observation {
 }
 
 /// Trait that describes a type capable of collapsing a cell
-pub trait Arbiter<V: Variant>: Adjuster<V> {
-  fn designate<D: Dimension, const DIM: usize>(
+pub trait Observer<V: Variant>: Modifier<V> {
+  fn observe<D: Dimension, const DIM: usize>(
     &mut self,
     cells: &mut Cells<V, D, DIM>,
   ) -> Result<Option<usize>, err::Error<DIM>>;
 }
 
 /// Trait that describes a type capable of mutating data after a cell collapsed
-pub trait Adjuster<V: Variant> {
-  type Chained<C: Adjuster<V>>: Adjuster<V>;
+pub trait Modifier<V: Variant> {
+  type Chained<C: Modifier<V>>: Modifier<V>;
 
   /// Perform any mutations to the Cells upon a variant being selected
-  fn revise<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>);
+  fn modify<D: Dimension, const DIM: usize>(&mut self, variant: &V, cells: &mut Cells<V, D, DIM>);
 
   fn chain<A>(self, other: A) -> Self::Chained<A>
   where
-    A: Adjuster<V>;
+    A: Modifier<V>;
 }
 
 /// Trait that describes a type that is capable of checking if a socket is compatible with all other sockets of a neighboring cell
@@ -212,7 +212,7 @@ mod tests {
   use crate::{prelude::*, rules::RuleBuilder};
   use maplit::hashmap;
   use prebuilt::{
-    arbiters::WeightArbiter, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
+    processing::WeightedObserver, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
   };
 
   const SEED: u64 = 123;
@@ -274,7 +274,7 @@ mod tests {
 
     let a_builder = StateBuilder::new(
       [5, 5],
-      WeightArbiter::new(Some(SEED), WeightedShape::new(weights.clone())),
+      WeightedObserver::new(Some(SEED), WeightedShape::new(weights.clone())),
       UnaryConstraint,
       rules.clone(),
     );
@@ -283,7 +283,7 @@ mod tests {
 
     let b_builder = StateBuilder::new(
       [5, 5],
-      WeightArbiter::new(Some(SEED), WeightedShape::new(weights)),
+      WeightedObserver::new(Some(SEED), WeightedShape::new(weights)),
       UnaryConstraint,
       rules,
     );

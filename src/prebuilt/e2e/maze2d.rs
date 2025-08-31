@@ -154,12 +154,12 @@ mod tests {
   use super::{Maze2dTypeSet, MazeRuleProvider};
   use crate::{
     prebuilt::{
-      arbiters::{LimitAdjuster, WeightArbiter},
+      processing::{LimitMod, WeightedObserver},
       auto::GenericFinder,
       constraints::UnaryConstraint,
       shapes::{InformedShape, MultiShape, WeightedShape},
     },
-    Adjuster, RuleFinder, StateBuilder,
+    Modifier, RuleFinder, StateBuilder,
   };
   use maplit::hashmap;
 
@@ -261,7 +261,7 @@ mod tests {
       InformedShape::new(INFLUENCE_RADIUS, 1, HashMap::default()),
     );
 
-    let arbiter = WeightArbiter::new(Some(SEED), shape).chain(LimitAdjuster::new(hashmap! {
+    let arbiter = WeightedObserver::new(Some(SEED), shape).chain(LimitMod::new(hashmap! {
       TextMaze::ENTRANCE => 0,
       TextMaze::EXIT => 0,
     }));

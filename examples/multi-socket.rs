@@ -1,4 +1,4 @@
-use prebuilt::{arbiters::RandomArbiter, constraints::UnaryConstraint};
+use prebuilt::{constraints::UnaryConstraint, processing::RandomObserver};
 use std::collections::BTreeSet;
 use wfc::{prebuilt::Dim3d, prelude::*, StateBuilder};
 
@@ -15,7 +15,7 @@ fn main() {
 
   let builder = StateBuilder::new(
     [50, 50, 50],
-    RandomArbiter::default(),
+    RandomObserver::default(),
     UnaryConstraint,
     rules,
   );

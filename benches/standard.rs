@@ -12,13 +12,13 @@ mod text {
   use maplit::hashmap;
   use wfc::{
     prebuilt::{
-      arbiters::{LimitAdjuster, RandomArbiter},
       auto::GenericFinder,
       constraints::UnaryConstraint,
       e2e::maze2d::{Maze2dTypeSet, MazeRuleProvider, Socket},
+      processing::{LimitMod, RandomObserver},
       Dim2d,
     },
-    Adjuster, Arbiter, Constraint, RuleFinder, Rules, Size, StateBuilder,
+    Constraint, Modifier, Observer, RuleFinder, Rules, Size, StateBuilder,
   };
 
   #[derive(Debug)]
@@ -73,7 +73,7 @@ mod text {
     for pow in 4_u32..8_u32 {
       let dims = 2_u32.pow(pow);
 
-      let arbiter = RandomArbiter::new(Some(SEED)).chain(LimitAdjuster::new(hashmap! {
+      let arbiter = RandomObserver::new(Some(SEED)).chain(LimitMod::new(hashmap! {
         TextMazeBench::ENTRANCE => 0,
         TextMazeBench::EXIT => 0,
       }));
@@ -92,9 +92,9 @@ mod text {
     }
   }
 
-  fn execute<A, C>(builder: StateBuilder<A, C, char, Dim2d, Option<Socket>, 2>)
+  fn execute<O, C>(builder: StateBuilder<O, C, char, Dim2d, Option<Socket>, 2>)
   where
-    A: Arbiter<char>,
+    O: Observer<char>,
     C: Constraint<Option<Socket>>,
   {
     let mut state = builder.build().expect("Failed to build state");
@@ -106,7 +106,7 @@ mod text {
 mod misc {
   use crate::SEED;
   use criterion::Criterion;
-  use prebuilt::{arbiters::RandomArbiter, constraints::SetConstraint};
+  use prebuilt::{constraints::SetConstraint, processing::RandomObserver};
   use std::collections::BTreeSet;
   use wfc::{prebuilt::Dim3d, prelude::*, Size, StateBuilder};
 
@@ -125,7 +125,7 @@ mod misc {
       .with_rule(3, |_| BTreeSet::from_iter([2, 3]))
       .into();
 
-    let builder = StateBuilder::new(size, RandomArbiter::new(Some(SEED)), SetConstraint, rules);
+    let builder = StateBuilder::new(size, RandomObserver::new(Some(SEED)), SetConstraint, rules);
     let mut state = builder.build().expect("Failed to build state");
     wfc::collapse(&mut state).expect("Failed to collapse");
   }

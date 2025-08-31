@@ -214,9 +214,11 @@ pub fn to_index<const DIM: usize>(
     .enumerate()
     .map(|(i, p)| {
       *p.borrow()
-        * (i > 0)
-          .then(|| (0..i).map(|i| size[i]).product::<usize>())
-          .unwrap_or(1)
+        * if i > 0 {
+          (0..i).map(|i| size[i]).product::<usize>()
+        } else {
+          1
+        }
     })
     .sum()
 }
@@ -230,9 +232,11 @@ pub fn from_index<const DIM: usize>(mut index: usize, size: Size<DIM>) -> [usize
 
     // then compute the product of the dimensions from 0 to the reverse of i
     // in 3d with rev_i == 2 this would be x & y dimensions
-    let product_of_parts = (rev_i > 0)
-      .then(|| (0..rev_i).map(|ri| size[ri]).product::<usize>())
-      .unwrap_or(1);
+    let product_of_parts = if rev_i > 0 {
+      (0..rev_i).map(|ri| size[ri]).product::<usize>()
+    } else {
+      1
+    };
 
     // divide by the above value, which is the amount of times the index fits into the dimension
     let entry = index / product_of_parts;
