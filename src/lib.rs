@@ -11,10 +11,10 @@ pub(crate) mod util;
 
 use derive_more::derive::{Deref, DerefMut};
 use derive_new::new;
+use rand::distr::uniform::SampleUniform;
 pub use strum;
 
 use cells::Cells;
-use rand::distributions::uniform::SampleUniform;
 use std::{
   cmp::PartialOrd,
   collections::{BTreeSet, HashSet},
@@ -27,6 +27,7 @@ use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 pub mod prelude {
   pub use super::{
+    Observation,
     auto::{FindResult, NoSocket, RuleFinder, SocketProvider},
     collapse,
     err::Error,
@@ -34,7 +35,6 @@ pub mod prelude {
     rules::{AbstractRule, AbstractRules, Legend, Rule, RuleBuilder, Rules},
     state::{State, StateBuilder},
     util::{IPos, Size, UPos},
-    Observation,
   };
 }
 
@@ -169,6 +169,7 @@ pub trait Constraint<S: Socket>: Debug {
 /// Trait that describes a valid weight
 pub trait Weight:
   SampleUniform
+  + rand::distr::weighted::Weight
   + Default
   + Clone
   + Copy
@@ -183,6 +184,7 @@ pub trait Weight:
 
 impl<T> Weight for T where
   T: SampleUniform
+    + rand::distr::weighted::Weight
     + Default
     + Clone
     + Copy
@@ -212,7 +214,7 @@ mod tests {
   use crate::{prelude::*, rules::RuleBuilder};
   use maplit::hashmap;
   use prebuilt::{
-    processing::WeightedObserver, constraints::UnaryConstraint, shapes::WeightedShape, Dim2d,
+    Dim2d, constraints::UnaryConstraint, processing::WeightedObserver, shapes::WeightedShape,
   };
 
   const SEED: u64 = 123;

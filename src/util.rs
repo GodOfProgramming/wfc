@@ -1,4 +1,4 @@
-use crate::{err::ConversionError, DimensionId};
+use crate::{DimensionId, err::ConversionError};
 use derive_more::derive::{Deref, DerefMut};
 use nalgebra::SVector;
 use std::{
@@ -256,8 +256,8 @@ pub fn from_index<const DIM: usize>(mut index: usize, size: Size<DIM>) -> [usize
 pub unsafe fn index_twice_mut<T>(slice: &mut [T], i: usize, j: usize) -> [&mut T; 2] {
   debug_assert_ne!(i, j);
   let ptr = slice.as_mut_ptr();
-  let ar = &mut *ptr.add(i);
-  let br = &mut *ptr.add(j);
+  let ar = unsafe { &mut *ptr.add(i) };
+  let br = unsafe { &mut *ptr.add(j) };
   [ar, br]
 }
 

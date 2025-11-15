@@ -1,8 +1,8 @@
-use crate::{cells::Cells, err, CellIndex, Dimension, Error, Modifier, Observer, Shape, Variant};
+use crate::{CellIndex, Dimension, Error, Modifier, Observer, Shape, Variant, cells::Cells, err};
 use derive_more::derive::{Deref, DerefMut};
 use rand::{
-  seq::{IteratorRandom, SliceRandom},
-  thread_rng, Rng, SeedableRng,
+  RngCore, SeedableRng,
+  seq::{IndexedRandom, IteratorRandom},
 };
 use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, iter::Iterator, marker::PhantomData};
@@ -16,7 +16,7 @@ pub struct RandomObserver {
 
 impl Default for RandomObserver {
   fn default() -> Self {
-    let seed = thread_rng().gen();
+    let seed = rand::rng().next_u64();
     let rng = ChaCha20Rng::seed_from_u64(seed);
 
     Self { seed, rng }
@@ -37,7 +37,7 @@ impl RandomObserver {
     let (rng, seed) = seed
       .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
       .unwrap_or_else(|| {
-        let seed = thread_rng().gen();
+        let seed = rand::rng().next_u64();
         (ChaCha20Rng::seed_from_u64(seed), seed)
       });
 
@@ -107,7 +107,7 @@ where
   S: Default,
 {
   fn default() -> Self {
-    let seed = thread_rng().gen();
+    let seed = rand::rng().next_u64();
     let rng = ChaCha20Rng::seed_from_u64(seed);
 
     Self {
@@ -136,7 +136,7 @@ impl<S: Shape> WeightedObserver<S> {
     let (rng, seed) = seed
       .map(|seed| (ChaCha20Rng::seed_from_u64(seed), seed))
       .unwrap_or_else(|| {
-        let seed = thread_rng().gen();
+        let seed = rand::rng().next_u64();
         (ChaCha20Rng::seed_from_u64(seed), seed)
       });
 
