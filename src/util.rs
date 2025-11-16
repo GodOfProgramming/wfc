@@ -25,7 +25,6 @@ macro_rules! here {
 
 #[derive(Debug, Clone, Copy, Deref, DerefMut)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct Size<const DIM: usize>(SVector<usize, DIM>);
 
 impl<const DIM: usize> Default for Size<DIM> {
@@ -81,7 +80,6 @@ impl<const DIM: usize> From<[i32; DIM]> for Size<DIM> {
 
 #[derive(Debug, Clone, Copy, Deref, DerefMut, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct IPos<const DIM: usize>(pub SVector<isize, DIM>);
 
 impl<const DIM: usize> Default for IPos<DIM> {
@@ -130,7 +128,6 @@ where
 
 #[derive(Debug, Clone, Copy, Deref, DerefMut, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct UPos<const DIM: usize>(pub SVector<usize, DIM>);
 
 impl<const DIM: usize> Default for UPos<DIM> {

@@ -23,6 +23,7 @@ serde = { version = "1.0.217", features = ["derive"], optional = true }
 
 bevy_reflect = { version = "0.17", optional = true }
 bevy_utils = { version = "0.17", optional = true }
+bevy_platform = { version = "0.17.2", optional = true }
 
 profiling = "1.0.17"
 tracing = { version = "0.1.41", optional = true }
@@ -55,7 +56,7 @@ serde = [
   "bimap/serde",
 ]
 
-bevy = ["dep:bevy_reflect", "dep:bevy_utils"]
+bevy = ["dep:bevy_reflect", "dep:bevy_utils", "dep:bevy_platform"]
 
 profiling = [
   "profiling/profile-with-tracing",

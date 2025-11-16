@@ -1,8 +1,8 @@
 use crate::{
+  Constraint, Dimension, Error, Observation, Observer, Rules, Socket, Variant,
   cells::{Cell, Cells},
   err,
   util::{self, Size, UPos},
-  Constraint, Dimension, Error, Observation, Observer, Rules, Socket, Variant,
 };
 use derive_more::derive::{Deref, DerefMut};
 use std::{
@@ -20,6 +20,7 @@ where
   D: Dimension,
   S: Socket,
 {
+  #[cfg_attr(feature = "bevy", reflect(ignore))]
   size: Size<DIM>,
   arbiter: A,
   constraint: C,
@@ -434,6 +435,7 @@ struct ExtCells<V, D, const DIM: usize>
 where
   D: Dimension,
 {
+  #[cfg_attr(feature = "bevy", reflect(ignore))]
   size: Size<DIM>,
   #[deref]
   #[deref_mut]

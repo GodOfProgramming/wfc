@@ -64,6 +64,25 @@ where
   }
 }
 
+#[cfg(feature = "bevy")]
+impl<V, D, S, IntoRule> From<bevy_platform::collections::HashMap<V, IntoRule>>
+  for RuleBuilder<V, D, S>
+where
+  V: Variant,
+  D: Dimension,
+  S: Socket,
+  IntoRule: Into<Rule<D, S>>,
+{
+  fn from(value: bevy_platform::collections::HashMap<V, IntoRule>) -> Self {
+    Self {
+      table: value
+        .into_iter()
+        .map(|(k, v)| (k, v.into()))
+        .collect::<HashMap<V, Rule<D, S>>>(),
+    }
+  }
+}
+
 impl<V, D, S> FromIterator<(V, Rule<D, S>)> for RuleBuilder<V, D, S>
 where
   V: Variant,

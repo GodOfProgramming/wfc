@@ -1,7 +1,6 @@
 use crate::{
-  err,
+  CellIndex, Dimension, Rules, Socket, UPos, Variant, err,
   util::{self, IPos, Size},
-  CellIndex, Dimension, Rules, Socket, UPos, Variant,
 };
 use derive_more::derive::Deref;
 use ordermap::OrderSet;
@@ -16,6 +15,7 @@ use std::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bevy", derive(bevy_reflect::Reflect))]
 pub struct Cells<V: Variant, D: Dimension, const DIM: usize> {
+  #[cfg_attr(feature = "bevy", reflect(ignore))]
   pub size: Size<DIM>,
   pub list: Vec<Cell<V, D, DIM>>,
 
@@ -151,6 +151,7 @@ pub struct Cell<V: Variant, D: Dimension, const DIM: usize> {
   pub neighbors: Vec<(CellIndex, D)>,
   pub entropy: usize,
 
+  #[cfg_attr(feature = "bevy", reflect(ignore))]
   pub position: IPos<DIM>,
 }
 
