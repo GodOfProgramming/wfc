@@ -122,15 +122,15 @@ where
   S: Socket,
 {
   cells: Cells<V, D, DIM>,
-  arbiter: A,
+  observer: A,
   constraint: C,
   rules: Rules<V, D, S>,
   socket_cache: SocketCache<V, D, S>,
 }
 
-impl<A, C, V, D, S, const DIM: usize> State<A, C, V, D, S, DIM>
+impl<O, C, V, D, S, const DIM: usize> State<O, C, V, D, S, DIM>
 where
-  A: Observer<V>,
+  O: Observer<V>,
   C: Constraint<S>,
   V: Variant,
   D: Dimension,
@@ -140,7 +140,7 @@ where
   #[profiling::function]
   fn new(
     size: Size<DIM>,
-    arbiter: A,
+    observer: O,
     constraint: C,
     rules: Rules<V, D, S>,
     input: Vec<Option<V>>,
@@ -150,7 +150,7 @@ where
     let mut this = Self {
       cells: Cells::new(size, input, &rules),
       rules,
-      arbiter,
+      observer,
       constraint,
       socket_cache: Default::default(),
     };
@@ -164,14 +164,14 @@ where
 
   #[profiling::function]
   pub fn collapse(&mut self) -> Result<Observation, err::Error<DIM>> {
-    let Some(index) = self.arbiter.observe(&mut self.cells)? else {
+    let Some(index) = self.observer.observe(&mut self.cells)? else {
       return Ok(Observation::Complete);
     };
 
     let cell = &self.cells.list[index];
     let possibility = cell.selected_variant().cloned().unwrap();
 
-    self.arbiter.modify(&possibility, &mut self.cells);
+    self.observer.modify(&possibility, &mut self.cells);
     self.propagate(index)?;
 
     Ok(Observation::Incomplete(index))
@@ -350,7 +350,7 @@ where
       .collect::<Vec<_>>();
 
     for (i, variant) in propagations {
-      self.arbiter.modify(&variant, &mut self.cells);
+      self.observer.modify(&variant, &mut self.cells);
       self.propagate(i)?;
     }
 
