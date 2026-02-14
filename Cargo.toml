@@ -21,9 +21,9 @@ thiserror = "2.0.9"
 
 serde = { version = "1.0.217", features = ["derive"], optional = true }
 
-bevy_reflect = { version = "0.17", optional = true }
-bevy_utils = { version = "0.17", optional = true }
-bevy_platform = { version = "0.17.2", optional = true }
+bevy_reflect = { version = "0.18", optional = true }
+bevy_utils = { version = "0.18", optional = true }
+bevy_platform = { version = "0.18", optional = true }
 
 profiling = "1.0.17"
 tracing = { version = "0.1.41", optional = true }
